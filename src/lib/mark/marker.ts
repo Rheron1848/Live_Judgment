@@ -1,4 +1,5 @@
 import type { UserVerdict } from '../detect/verdict'
+import type { WatchlistEntry } from '../store/watchlist'
 import { badgesForVerdict } from './badge'
 
 const STYLE_ID = 'lj-marker-style'
@@ -21,21 +22,32 @@ export function ensureStyle(doc: Document = document): void {
   doc.head.appendChild(style)
 }
 
-/** 在弹幕节点插入/更新徽章（幂等，判定升级时刷新内容）/ Insert or update badges on a chat item (idempotent; refreshes on verdict upgrades). */
-export function markElement(el: HTMLElement, verdict: UserVerdict): void {
+// 徽章容器分自动/人工两个槽位，互不覆盖（判定升级刷自动槽，名单标记刷人工槽）。
+// The badge container has separate auto/manual slots so updates never clobber each other.
+function slotOf(el: HTMLElement, slot: 'auto' | 'manual'): HTMLElement {
   const doc = el.ownerDocument
-  ensureStyle(doc)
-
   let container = el.querySelector<HTMLElement>(':scope > .lj-badges')
   if (!container) {
     container = doc.createElement('span')
     container.className = 'lj-badges'
     el.prepend(container)
   }
+  let s = container.querySelector<HTMLElement>(`[data-lj-slot="${slot}"]`)
+  if (!s) {
+    s = doc.createElement('span')
+    s.dataset.ljSlot = slot
+    container.appendChild(s)
+  }
+  return s
+}
 
-  container.replaceChildren(
+/** 在弹幕节点插入/更新检测徽章（幂等，判定升级时刷新内容）/ Insert or update detection badges on a chat item (idempotent; refreshes on verdict upgrades). */
+export function markElement(el: HTMLElement, verdict: UserVerdict): void {
+  ensureStyle(el.ownerDocument)
+  const slot = slotOf(el, 'auto')
+  slot.replaceChildren(
     ...badgesForVerdict(verdict).map((spec) => {
-      const badge = doc.createElement('span')
+      const badge = el.ownerDocument.createElement('span')
       badge.className = spec.solid ? 'lj-badge' : 'lj-badge lj-badge--soft'
       badge.style.backgroundColor = spec.color
       badge.textContent = spec.label
@@ -45,9 +57,32 @@ export function markElement(el: HTMLElement, verdict: UserVerdict): void {
   )
 }
 
-/** 补标某用户在屏的旧弹幕 / Retro-mark a user's messages already present in the chat area. */
+/** 在弹幕节点插入/更新人工名单徽章 / Insert or update the manual-watchlist badge on a chat item. */
+export function markManual(el: HTMLElement, entry: WatchlistEntry): void {
+  const doc = el.ownerDocument
+  ensureStyle(doc)
+  const slot = slotOf(el, 'manual')
+  const badge = doc.createElement('span')
+  badge.className = 'lj-badge'
+  badge.style.backgroundColor = '#1e88e5'
+  badge.textContent = '人工'
+  const added = new Date(entry.addedAt).toLocaleString()
+  badge.title = `人工标记\n加入于 ${added}${entry.note ? `\n备注：${entry.note}` : ''}`
+  slot.replaceChildren(badge)
+}
+
+/** 补标某用户在屏的旧弹幕（检测徽章）/ Retro-mark a user's on-screen messages (detection badges). */
 export function markExisting(uid: number, verdict: UserVerdict, root: ParentNode = document): void {
   for (const el of root.querySelectorAll<HTMLElement>(`${ITEM_SELECTOR}[data-uid="${uid}"]`)) {
     markElement(el, verdict)
+  }
+}
+
+/** 补标名单用户在屏的旧弹幕（人工徽章）/ Retro-mark a watchlisted user's on-screen messages. */
+export function markManualExisting(entry: WatchlistEntry, root: ParentNode = document): void {
+  for (const el of root.querySelectorAll<HTMLElement>(
+    `${ITEM_SELECTOR}[data-uid="${entry.uid}"]`,
+  )) {
+    markManual(el, entry)
   }
 }
