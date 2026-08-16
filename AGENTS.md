@@ -83,6 +83,6 @@
 
 - **项目形态**：B 站直播弹幕治理工具，产物为 Tampermonkey / Violentmonkey 油猴脚本。
 - **技术栈**：Bun + Vite + TypeScript（构建为单文件 userscript）。
-- **验证命令**：`bun run typecheck`（tsc --noEmit）、`bun run lint`（biome check）、`bun run build`（tsc + vite build，产物 `dist/live-judgment.user.js`）。
+- **验证命令**：`bun run typecheck`（tsc --noEmit）、`bun run lint`（biome check）、`bun run build`（tsc + vite build，产物 `dist/live-judgment.user.js`）、`bun test`（单测）。真实直播间无人值守验收见 `tools/README.md`（CDP 无头方案）。
 - **需求权威文档**：`docs/requirements.md`。
 - **本地约束**：仓库根可能存在 `AGENTS.local.md`（已通过 `.git/info/exclude` 排除，永不入库）；存在时必读，其中的约束优先于一切提效考虑。
