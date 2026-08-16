@@ -46,15 +46,20 @@ export function createDomChatSource(roomId: number): DanmakuSource {
         return () => itemObserver?.disconnect()
       }
 
-      // 聊天区可能晚于脚本加载出现，先盯 body 等容器挂载。
-      // The chat area may mount after the script; watch body until the container appears.
+      // 聊天区可能晚于脚本加载出现，先盯根元素等容器挂载。
+      // document.body 在 document-start 时序下可能为 null，退到 documentElement。
+      // The chat area may mount after the script; watch the root element until the container appears.
+      // document.body can be null at document-start, so fall back to documentElement.
       const waitObserver = new MutationObserver(() => {
         const container = document.querySelector(CONTAINER_SELECTOR)
         if (!container) return
         waitObserver.disconnect()
         attach(container)
       })
-      waitObserver.observe(document.body, { childList: true, subtree: true })
+      waitObserver.observe(document.body ?? document.documentElement, {
+        childList: true,
+        subtree: true,
+      })
 
       return () => {
         waitObserver.disconnect()

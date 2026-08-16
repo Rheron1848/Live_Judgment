@@ -52,6 +52,7 @@ export function markElement(el: HTMLElement, verdict: UserVerdict): void {
       badge.style.backgroundColor = spec.color
       badge.textContent = spec.label
       badge.title = spec.title
+      badge.dataset.ljUid = String(verdict.uid)
       return badge
     }),
   )
@@ -68,7 +69,15 @@ export function markManual(el: HTMLElement, entry: WatchlistEntry): void {
   badge.textContent = '人工'
   const added = new Date(entry.addedAt).toLocaleString()
   badge.title = `人工标记\n加入于 ${added}${entry.note ? `\n备注：${entry.note}` : ''}`
+  badge.dataset.ljUid = String(entry.uid)
   slot.replaceChildren(badge)
+}
+
+/** 清掉某用户在屏弹幕的人工徽章（移出名单时调用）/ Remove manual badges from a user's on-screen messages (when unwatching). */
+export function unmarkManual(uid: number, root: ParentNode = document): void {
+  for (const el of root.querySelectorAll<HTMLElement>(`${ITEM_SELECTOR}[data-uid="${uid}"]`)) {
+    el.querySelector('[data-lj-slot="manual"]')?.replaceChildren()
+  }
 }
 
 /** 补标某用户在屏的旧弹幕（检测徽章）/ Retro-mark a user's on-screen messages (detection badges). */
