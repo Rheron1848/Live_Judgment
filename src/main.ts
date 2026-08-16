@@ -1,15 +1,23 @@
 import { createDetectionEngine } from './lib/detect/engine'
 import { createDomChatSource } from './lib/dom-chat-source'
+import { markElement, markExisting } from './lib/mark/marker'
 import { parseRoomId } from './lib/room'
 
 const roomId = parseRoomId(location.pathname)
-if (roomId === null) {
-  // 非直播间页面（如首页），静默退出 / Not a live-room page (e.g. index); exit silently.
-} else {
+if (roomId !== null) {
   const engine = createDetectionEngine()
-  // 临时验证输出，F3 标记渲染落地后移除 / Temporary verification output; remove once F3 marker rendering lands.
-  engine.onVerdict((verdict) => console.log('[LiveJudgment] verdict', JSON.stringify(verdict)))
+
+  engine.onVerdict((verdict) => {
+    // 调试用日志，设置面板落地后改为可选 / Debug log; make optional once the settings panel lands.
+    console.log('[LiveJudgment] verdict', JSON.stringify(verdict))
+    markExisting(verdict.uid, verdict)
+  })
 
   const source = createDomChatSource(roomId)
-  source.start((event) => engine.ingest(event))
+  source.start((event) => {
+    engine.ingest(event)
+    if (!event.el) return
+    const verdict = engine.getVerdict(event.uid)
+    if (verdict) markElement(event.el, verdict)
+  })
 }
