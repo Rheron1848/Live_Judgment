@@ -1,10 +1,6 @@
-# AGENTS.md — 通用 AI 协作规范
+# AGENTS.md — AI 协作规范
 
-> 与工具无关的 AI agent 行为基线，适用于 Kimi Code、Claude Code、Codex 等任何会读取 `AGENTS.md` 的编码 agent。
->
-> **用法**：把本文件复制到新项目根目录，按项目情况增删。项目专属内容（技术栈、命令、目录结构）写进项目自己的文档，本文件只放通用基线并用指针引用——不要在多个文件里重复同一套规则，避免真源漂移。
->
-> **权威头（复制到项目后保留并填写）**：本文件复制自模板仓库 `Rheron1848/agent-template`，同步时模板 commit：`9bf6c21`；如有出入以模板仓库权威版为准。项目定制规则**不要写进上方正文**，追加到文末「项目定制」小节或单独文件，便于上游更新时整体替换正文。在项目里验证过的通用经验可回写模板仓库，流程见其 README「分发与定制」。
+> 适用于任何会读取 `AGENTS.md` 的编码 agent（Kimi Code、Claude Code、Codex 等）。
 
 ## 1. 铁律（违反会出事的硬边界）
 
@@ -77,9 +73,9 @@
 - 遇到 bug / 测试失败 / 异常行为：先 `systematic-debugging` 定位根因再修
 - 声称完成前：`verification-before-completion`，先跑验证拿到证据再下结论
 
-模板仓库 `templates/` 的简报 / 报告 / 规格 / 计划模板作为上述流程的**留档格式**；环境没有 superpowers 时，按模板手动执行同一流程，产出同样的留档。模板资产见上游仓库 <https://github.com/Rheron1848/agent-template>（本项目未复制，按需取用）。
+简报 / 报告 / 规格 / 计划的**留档格式**参照本仓库 `docs/specs/` 已有规格；环境没有 superpowers 时，按同一流程手动执行并留档。
 
-## 项目定制（复制到项目后在此追加，不影响上游同步）
+## 项目定制
 
 - **项目形态**：B 站直播弹幕治理工具，产物为 Tampermonkey / Violentmonkey 油猴脚本。
 - **技术栈**：Bun + Vite + TypeScript（构建为单文件 userscript）。
