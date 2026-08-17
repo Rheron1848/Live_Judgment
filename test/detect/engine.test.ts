@@ -61,9 +61,9 @@ describe('D1 独轮车复读', () => {
 
   test('第 3 条同文本到达时先给中置信', () => {
     const engine = createDetectionEngine()
-    // 间隔拉开，避免节拍证据 / Spread intervals so the cadence signal doesn't fire.
+    // 间隔拉开，避免节拍证据；用户窗口 1 分钟，间隔须小于窗口 / Spread intervals so the cadence signal doesn't fire; must stay within the 1-minute user window.
     for (let i = 0; i < 3; i++) {
-      engine.ingest(ev(1, '前排', T0 + i * 60_000))
+      engine.ingest(ev(1, '前排', T0 + i * 20_000))
     }
     const d1 = verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')
     expect(d1?.confidence).toBe('medium')
@@ -78,6 +78,44 @@ describe('D1 独轮车复读', () => {
     }
     const d1 = verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')
     expect(d1?.evidence.join()).toContain('轮播')
+  })
+
+  // 应援/情绪类文本是直播间正常文化，不参与 D1（2026-08-17 用户拍板）
+  // Hype/emote texts are normal chat culture and exempt from D1.
+  test('连刷 5 个问号 → 不判 D1', () => {
+    const engine = createDetectionEngine()
+    for (let i = 0; i < 5; i++) {
+      engine.ingest(ev(1, '?', T0 + i * 1010))
+    }
+    expect(verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')).toBeUndefined()
+  })
+
+  test('连刷打call与方括号表情 → 不判 D1', () => {
+    const engine = createDetectionEngine()
+    const seq = ['打call', '打call', '打call', '[打call]', '[打call]', '[doge]']
+    for (const [i, text] of seq.entries()) {
+      engine.ingest(ev(1, text, T0 + i * 1010))
+    }
+    expect(verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')).toBeUndefined()
+  })
+
+  test('斜杠打call /名字/ 连刷 → 不判 D1', () => {
+    const engine = createDetectionEngine()
+    for (let i = 0; i < 5; i++) {
+      engine.ingest(ev(1, '/嘉然/', T0 + i * 1010))
+    }
+    expect(verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')).toBeUndefined()
+  })
+
+  test('豁免文本之间夹带复读广告 → 剩余部分照常判 D1', () => {
+    const engine = createDetectionEngine()
+    const seq = ['?', '加群123456', '？', '加群123456', '[doge]', '加群123456']
+    for (const [i, text] of seq.entries()) {
+      engine.ingest(ev(1, text, T0 + i * 2020))
+    }
+    const d1 = verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')
+    expect(d1).toBeDefined()
+    expect(d1?.evidence.join()).toContain('复读')
   })
 })
 

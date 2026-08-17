@@ -33,6 +33,10 @@ export interface D1Config {
   cycleMinLen: number
   cycleMaxLen: number
   cycleMinRounds: number
+  /** 豁免文本（归一化后精确匹配）：应援/情绪类正常文化，不参与 D1 / Exempt normalized texts (exact match): hype culture, excluded from D1. */
+  exemptTexts: readonly string[]
+  /** 豁免模式（归一化后匹配）：纯标点、方括号表情、/名字/ 打call / Exempt patterns: pure punctuation, [emote], /name/ cheering. */
+  exemptPatterns: readonly RegExp[]
 }
 
 /** D4 阈值 / D4 thresholds. */
@@ -76,7 +80,10 @@ export interface D8Config {
 }
 
 export const defaultDetectConfig: DetectConfig = {
-  userWindowMs: 10 * 60 * 1000,
+  // 用户窗口 1 分钟（2026-08-17 用户拍板，由 10 分钟收窄：独轮车信号是即时的，长窗只会攒误报）
+  // User window narrowed 10min → 1min (user decision): repeat-loop signals are immediate;
+  // a long window only accumulates false positives.
+  userWindowMs: 60 * 1000,
   userWindowMax: 100,
   globalWindowMs: 60 * 1000,
   d1: {
@@ -87,6 +94,13 @@ export const defaultDetectConfig: DetectConfig = {
     cycleMinLen: 2,
     cycleMaxLen: 6,
     cycleMinRounds: 2,
+    // 豁免名单保持短小、只收无争议项；规避免费应援文化被误判 / Keep the exempt list short and uncontroversial.
+    exemptTexts: ['打call', '666', '233', '2333', 'hhh', 'awsl', '好耶'],
+    exemptPatterns: [
+      /^[\p{P}\p{S}]+$/u, // 纯标点/符号：?、！！！等 / pure punctuation: ?, !!!, etc.
+      /^\[[^\s[\]]{1,8}\]$/, // 单方括号表情：[打call]、[doge] / single bracket emote
+      /^\/[^\s/]{1,12}\/$/, // 斜杠打call：/名字/ / slash cheering: /name/
+    ],
   },
   d4: {
     trendWindowMs: 15 * 1000,
