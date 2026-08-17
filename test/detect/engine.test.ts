@@ -157,3 +157,54 @@ describe('防误报', () => {
     expect(verdictOf(engine, 4)).toBeUndefined()
   })
 })
+
+describe('D8 长文无关刷屏', () => {
+  // 上下文：其他用户在聊主播/游戏 / Context: other users chatting about the streamer/game.
+  const CONTEXT = ['主播这波操作太秀了', '游戏节奏起来了', '主播今天状态无敌', '哈哈哈哈', '666']
+  // 三条互不相似的长古文（与上下文零重合）/ Three mutually dissimilar long off-topic texts.
+  const OFFTOPIC = [
+    '乾坤倒置江河逆流日月无光星辰陨落山河破碎草木枯荣鸟兽散尽风雨飘摇',
+    '洪荒初开混沌未分阴阳交错五行颠倒四时失序万物凋零天地悲鸣鬼神皆惊',
+    '玄黄未定清浊难分龙蛇起陆虎豹潜形鹰隼试翼风尘吸张奇花初胎矞矞皇皇',
+  ]
+
+  function feedContext(engine: ReturnType<typeof createDetectionEngine>, t: number) {
+    for (const [i, text] of CONTEXT.entries()) engine.ingest(ev(10 + i, text, t + i * 3000))
+  }
+
+  test('连发 3 条长且无关 → D8 中置信', () => {
+    const engine = createDetectionEngine()
+    feedContext(engine, T0)
+    for (const [i, text] of OFFTOPIC.entries()) engine.ingest(ev(1, text, T0 + 20_000 + i * 5000))
+    const d8 = verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D8')
+    expect(d8?.confidence).toBe('medium')
+  })
+
+  test('长但与上下文共享话题词 → 不命中', () => {
+    const engine = createDetectionEngine()
+    feedContext(engine, T0)
+    const onTopic = '主播这波的游戏节奏和状态真的好无敌啊观众们都看得目瞪口呆纷纷点赞'
+    for (let i = 0; i < 3; i++) engine.ingest(ev(1, `${onTopic}${i}`, T0 + 20_000 + i * 5000))
+    expect(verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D8')).toBeUndefined()
+  })
+
+  test('只有 2 条长文无关 → 不命中', () => {
+    const engine = createDetectionEngine()
+    feedContext(engine, T0)
+    for (const [i, text] of OFFTOPIC.slice(0, 2).entries())
+      engine.ingest(ev(1, text, T0 + 20_000 + i * 5000))
+    expect(verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D8')).toBeUndefined()
+  })
+
+  test('房间中位数抬高长度阈值：全场长文时 50 字不算长', () => {
+    const engine = createDetectionEngine()
+    // 25 条 40 字消息垫高中位数 → 阈值 2×40=80 字 / 25 messages of 40 chars raise the median, threshold becomes 80.
+    const filler = '甲乙丙丁戊己庚辛壬癸'.repeat(4)
+    for (let i = 0; i < 25; i++) engine.ingest(ev(10 + (i % 5), filler, T0 + i * 1000))
+    // 50 字长文，低于 80 字阈值 / 50-char texts, below the 80-char threshold.
+    for (const [i, ch] of ['乾', '坤', '震'].entries()) {
+      engine.ingest(ev(1, ch.repeat(50), T0 + 30_000 + i * 5000))
+    }
+    expect(verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D8')).toBeUndefined()
+  })
+})

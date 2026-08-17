@@ -1,5 +1,5 @@
 /** 检测规则编号 / Detection rule ids. */
-export type RuleId = 'D1' | 'D2' | 'D4'
+export type RuleId = 'D1' | 'D2' | 'D4' | 'D8'
 
 /** 置信度：中为单信号，高为多信号或强信号 / Confidence: medium = single signal, high = multiple or strong signals. */
 export type Confidence = 'medium' | 'high'
@@ -58,6 +58,21 @@ export interface DetectConfig {
   globalWindowMs: number
   d1: D1Config
   d4: D4Config
+  d8: D8Config
+}
+
+/** D8 阈值 / D8 thresholds. */
+export interface D8Config {
+  /** 长文绝对长度下限（字）/ Absolute minimum length for a "long" message. */
+  minLen: number
+  /** 长文相对房间中位数的倍数 / Multiple of the room median length. */
+  lengthRatio: number
+  /** 与上下文二元组覆盖度上限，低于判无关 / Max context bigram containment; below means off-topic. */
+  overlapMax: number
+  /** 窗口内长文无关消息的最少条数 / Min long-off-topic messages in the user window. */
+  consecutiveMin: number
+  /** 参与上下文的消息条数 / How many recent messages form the context. */
+  contextSize: number
 }
 
 export const defaultDetectConfig: DetectConfig = {
@@ -81,5 +96,12 @@ export const defaultDetectConfig: DetectConfig = {
     joinsForMedium: 3,
     joinsForHigh: 5,
     maxAvgLatencyMs: 2000,
+  },
+  d8: {
+    minLen: 30,
+    lengthRatio: 2,
+    overlapMax: 0.05,
+    consecutiveMin: 3,
+    contextSize: 50,
   },
 }

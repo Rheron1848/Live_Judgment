@@ -47,8 +47,16 @@ const { result: session } = await send('Target.attachToTarget', {
 const sessionId = (session as { sessionId: string }).sessionId
 await send('Page.enable', {}, sessionId)
 await send('Network.enable', {}, sessionId)
-await send('Network.setBlockedURLs', { urls: ['*://*.bilivideo.com/*', '*://*.bilivideo.cn/*', '*.m4s*', '*.flv*', '*.mp4*'] }, sessionId)
-await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, sessionId)
+await send(
+  'Network.setBlockedURLs',
+  { urls: ['*://*.bilivideo.com/*', '*://*.bilivideo.cn/*', '*.m4s*', '*.flv*', '*.mp4*'] },
+  sessionId,
+)
+await send(
+  'Emulation.setDeviceMetricsOverride',
+  { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false },
+  sessionId,
+)
 await send('Page.navigate', { url }, sessionId)
 console.log(`waiting ${seconds}s...`)
 await new Promise((r) => setTimeout(r, seconds * 1000))
@@ -72,10 +80,19 @@ const DIAG = `(() => {
 })()`
 const diag = await send('Runtime.evaluate', { expression: DIAG }, sessionId)
 console.log('=== diagnostics ===')
-console.log(JSON.stringify(JSON.parse(String((diag.result as { result?: { value?: string } })?.result?.value ?? '{}')), null, 2))
+console.log(
+  JSON.stringify(
+    JSON.parse(String((diag.result as { result?: { value?: string } })?.result?.value ?? '{}')),
+    null,
+    2,
+  ),
+)
 
 const shot = await send('Page.captureScreenshot', { format: 'png' }, sessionId)
-writeFileSync('/tmp/lj-page.png', Buffer.from(String((shot.result as { data?: string })?.data ?? ''), 'base64'))
+writeFileSync(
+  '/tmp/lj-page.png',
+  Buffer.from(String((shot.result as { data?: string })?.data ?? ''), 'base64'),
+)
 console.log('screenshot: /tmp/lj-page.png')
 
 ws.close()

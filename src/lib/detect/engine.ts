@@ -2,6 +2,7 @@ import type { DanmakuEvent } from '../types'
 import { checkRepeatLoop } from './rules/d1-repeat'
 import { checkInvisibleChars } from './rules/d2-invisible'
 import { BandwagonTracker } from './rules/d4-bandwagon'
+import { checkLongOfftopic } from './rules/d8-long-offtopic'
 import { type DetectConfig, defaultDetectConfig, type RuleHit, type UserVerdict } from './verdict'
 import { SlidingWindow } from './window'
 
@@ -50,6 +51,9 @@ export function createDetectionEngine(config: DetectConfig = defaultDetectConfig
 
     const d4 = bandwagon.onEvent(event, globalWindow.values())
     if (d4) hits.push(d4)
+
+    const d8 = checkLongOfftopic(uw.values(), globalWindow.values(), config.d8)
+    if (d8) hits.push(d8)
 
     if (hits.length > 0) mergeVerdict(event, hits)
   }

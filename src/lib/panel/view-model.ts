@@ -33,6 +33,7 @@ const RULE_NAMES: Record<RuleId, string> = {
   D1: '独轮车复读',
   D2: '不可见字符规避',
   D4: '自动融入跟风',
+  D8: '长文无关刷屏',
 }
 
 function pad(n: number): string {

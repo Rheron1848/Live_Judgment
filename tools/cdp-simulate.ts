@@ -139,7 +139,10 @@ console.log('=== probe ===')
 console.log(JSON.stringify(JSON.parse(String(await evaluate(PROBE, sessionId))), null, 2))
 
 const shot = await send('Page.captureScreenshot', { format: 'png' }, sessionId)
-writeFileSync('/tmp/lj-sim.png', Buffer.from(String((shot.result as { data?: string })?.data ?? ''), 'base64'))
+writeFileSync(
+  '/tmp/lj-sim.png',
+  Buffer.from(String((shot.result as { data?: string })?.data ?? ''), 'base64'),
+)
 console.log('screenshot: /tmp/lj-sim.png')
 
 ws.close()

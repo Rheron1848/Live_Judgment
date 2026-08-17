@@ -15,6 +15,7 @@ const RULE_META: Record<RuleId, { label: string; color: string; name: string }> 
   D1: { label: 'D1', color: '#e8890c', name: '独轮车复读' },
   D2: { label: 'D2', color: '#d03030', name: '不可见字符规避' },
   D4: { label: 'D4', color: '#7c4dff', name: '自动融入跟风' },
+  D8: { label: 'D8', color: '#009688', name: '长文无关刷屏' },
 }
 
 /** 判定 → 徽章描述，每条命中规则一枚 / Verdict → badge descriptors, one per rule hit. */
