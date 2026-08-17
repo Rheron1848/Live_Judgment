@@ -1,4 +1,5 @@
 import { resolveAnchorName } from '../store/anchor'
+import type { BlockWordEntry } from '../store/blockwords'
 import { danmakuByUid } from '../store/danmaku'
 import { clearIncidents, deleteIncidentsByUid, incidentsByUid } from '../store/incidents'
 import type { WatchlistEntry } from '../store/watchlist'
@@ -12,11 +13,15 @@ export interface PanelContext {
   listWatchlist(): WatchlistEntry[]
   addWatch(entry: WatchlistEntry): Promise<void>
   removeWatch(uid: number): Promise<void>
+  listBlockWords(): BlockWordEntry[]
+  addBlockWord(entry: BlockWordEntry): Promise<void>
+  removeBlockWord(id: number): Promise<void>
 }
 
 export interface Panel {
   openUser(uid: number, uname: string): void
   openWatchlist(): void
+  openBlockWords(): void
   close(): void
 }
 
@@ -41,6 +46,7 @@ const CSS = `
 button { cursor: pointer; border: 0; border-radius: 4px; padding: 3px 8px; background: #2c3040; color: #e8e8e8; }
 button.danger { background: #7a2020; }
 input { flex: 1; min-width: 80px; background: #12141d; border: 1px solid #333; border-radius: 4px; color: #e8e8e8; padding: 3px 6px; }
+select { background: #12141d; border: 1px solid #333; border-radius: 4px; color: #e8e8e8; padding: 3px 6px; }
 a { color: #6ab0ff; text-decoration: none; }
 `
 
@@ -86,7 +92,7 @@ function makeDraggable(card: HTMLElement, handle: HTMLElement): void {
 export function createPanel(ctx: PanelContext): Panel {
   let host: HTMLElement | null = null
   let shadow: ShadowRoot | null = null
-  let tab: 'user' | 'watchlist' = 'user'
+  let tab: 'user' | 'watchlist' | 'blockwords' = 'user'
   let currentUid = 0
   let currentUname = ''
 
@@ -129,7 +135,12 @@ export function createPanel(ctx: PanelContext): Panel {
       tab = 'watchlist'
       render()
     })
-    tabs.append(userTab, watchTab)
+    const blockTab = el('span', `tab${tab === 'blockwords' ? ' tab--active' : ''}`, '屏蔽词')
+    blockTab.addEventListener('click', () => {
+      tab = 'blockwords'
+      render()
+    })
+    tabs.append(userTab, watchTab, blockTab)
     card.appendChild(tabs)
 
     const body = el('div')
@@ -137,7 +148,8 @@ export function createPanel(ctx: PanelContext): Panel {
     root.appendChild(card)
 
     if (tab === 'user') void renderUser(body)
-    else renderWatchlist(body)
+    else if (tab === 'watchlist') renderWatchlist(body)
+    else renderBlockWords(body)
   }
 
   async function renderUser(body: HTMLElement): Promise<void> {
@@ -287,6 +299,73 @@ export function createPanel(ctx: PanelContext): Panel {
     body.appendChild(footer)
   }
 
+  // 分组列出当前房间与全局词条；增删后 ctx 回调已重建 matcher，这里只需重绘列表。
+  // Entries are grouped by current room and global scope; ctx callbacks already rebuilt the matcher, so only re-render here.
+  function renderBlockWords(body: HTMLElement): void {
+    const entries = ctx.listBlockWords()
+    const groups: Array<{ title: string; items: BlockWordEntry[] }> = [
+      {
+        title: `本房间（${ctx.currentRoomId}）`,
+        items: entries.filter((e) => e.roomId === ctx.currentRoomId),
+      },
+      { title: '全局', items: entries.filter((e) => e.roomId === 0) },
+    ]
+    for (const group of groups) {
+      const section = el('div', 'section')
+      section.appendChild(el('h3', '', `${group.title}（${group.items.length}）`))
+      if (group.items.length === 0) section.appendChild(el('div', 'muted', '暂无词条'))
+      for (const item of group.items) {
+        const row = el('div', 'item')
+        if (item.isRegex) {
+          const tag = el('span', 'badge', 'regex')
+          tag.style.backgroundColor = '#8a6d1d'
+          row.appendChild(tag)
+        }
+        row.appendChild(el('span', '', item.word))
+        row.appendChild(
+          button('删除', () => {
+            if (item.id !== undefined) void ctx.removeBlockWord(item.id).then(render)
+          }),
+        )
+        section.appendChild(row)
+      }
+      body.appendChild(section)
+    }
+
+    const form = el('div', 'actions')
+    const input = document.createElement('input')
+    input.placeholder = '屏蔽词或正则'
+    const regexLabel = el('label')
+    const regexBox = document.createElement('input')
+    regexBox.type = 'checkbox'
+    regexLabel.append(regexBox, '正则')
+    const scope = document.createElement('select')
+    const optRoom = document.createElement('option')
+    optRoom.value = 'room'
+    optRoom.textContent = '本房间'
+    const optGlobal = document.createElement('option')
+    optGlobal.value = 'global'
+    optGlobal.textContent = '全局'
+    scope.append(optRoom, optGlobal)
+    form.append(
+      input,
+      regexLabel,
+      scope,
+      button('添加', () => {
+        const word = input.value.trim()
+        if (!word) return
+        void ctx
+          .addBlockWord({
+            word,
+            isRegex: regexBox.checked,
+            roomId: scope.value === 'global' ? 0 : ctx.currentRoomId,
+          })
+          .then(render)
+      }),
+    )
+    body.appendChild(form)
+  }
+
   return {
     openUser(uid, uname) {
       currentUid = uid
@@ -296,6 +375,10 @@ export function createPanel(ctx: PanelContext): Panel {
     },
     openWatchlist() {
       tab = 'watchlist'
+      render()
+    },
+    openBlockWords() {
+      tab = 'blockwords'
       render()
     },
     close,

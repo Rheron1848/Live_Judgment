@@ -55,3 +55,5 @@ cp ~/.config/google-chrome/Default/Cookies{,-journal} /tmp/lj-profile/Default/
 - **未登录无头客户端会被人机验证挡住**：容器在、消息不来。解法只有带登录态。
 - **document-start 时序**：`Page.addScriptToEvaluateOnNewDocument` 注入极早，`document.body` 为 null——源码里已做 `documentElement` 兜底，新写 DOM 代码注意同样问题。
 - **报错归因看堆栈**：B 站页面自身日志量很大（播放器、Vue、AI Gift 等），我们代码的判断依据是堆栈是否指向注入脚本。
+- **`addScriptToEvaluateOnNewDocument` 覆盖不到 blanc iframe 的真实文档**（2026-08-17 F6 验收实测，Chrome 151）：当前 B 站直播间聊天区整体在 `/blanc/<房间号>?liteVersion=true` iframe 里（无头下顶层文档不出现 `.chat-items`）；注入脚本只在 iframe 的初始 about:blank 文档执行，src 导航后的真实文档不再执行——探针读 iframe 要打标验证（`window.__probe = location.pathname` 读到 `blank` 即未覆盖）。解法：CDP 验收直接导航 `https://live.bilibili.com/blanc/<房间号>?liteVersion=true`，聊天区即顶层文档，脚本正常工作（`parseRoomId` 已兼容 `/blanc/` 前缀）。Tampermonkey 实装不受影响（`@match` 天然覆盖 iframe）。
+- **CDP 调试 tab 不关闭会污染 IndexedDB 计数**：每个工具脚本都 `Target.createTarget` 新建 tab 且不关闭，残留 tab 里的脚本持续 ingest 落库，后续观测 `danmaku` 计数会莫名增长。归因异常计数前先 `curl 127.0.0.1:9222/json/list` 看残留 tab，或直接重启无头 Chrome。

@@ -11,6 +11,7 @@ const CSS = `
 .lj-badges { display: inline-flex; gap: 2px; margin-right: 4px; vertical-align: middle; }
 .lj-badge { display: inline-block; padding: 0 3px; border-radius: 3px; font-size: 10px; line-height: 14px; color: #fff; cursor: help; user-select: none; }
 .lj-badge--soft { opacity: 0.55; }
+.lj-hidden { display: none !important; }
 `
 
 /** 注入徽章样式（幂等）/ Inject badge styles (idempotent). */
