@@ -99,7 +99,8 @@ export const defaultDetectConfig: DetectConfig = {
     exemptPatterns: [
       /^[\p{P}\p{S}]+$/u, // 纯标点/符号：?、！！！等 / pure punctuation: ?, !!!, etc.
       /^\[[^\s[\]]{1,8}\]$/, // 单方括号表情：[打call]、[doge] / single bracket emote
-      /^\/[^\s/]{1,12}\/$/, // 斜杠打call：/名字/ / slash cheering: /name/
+      /^\/[^\s/]{1,12}\/$/, // 正斜杠打call：/名字/ / forward-slash cheering: /name/
+      /^([\\/][^\s\\/]{1,8}[\\/])+$/, // 反斜杠打call及连打：\米米/、\米米/\米米/\米米/ / backslash cheering, incl. concatenated units
     ],
   },
   d4: {

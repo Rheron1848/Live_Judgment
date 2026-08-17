@@ -107,6 +107,16 @@ describe('D1 独轮车复读', () => {
     expect(verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')).toBeUndefined()
   })
 
+  // 真实误报案例（uid 360569，2026-08-17）：反斜杠连打是应援文化 / Real false positive: backslash concatenated cheering.
+  test('反斜杠连打 \\米米/\\米米/… 连刷 → 不判 D1', () => {
+    const engine = createDetectionEngine()
+    const cheer = '\\米米/\\米米/\\米米/\\米米/\\米米/'
+    for (let i = 0; i < 5; i++) {
+      engine.ingest(ev(1, cheer, T0 + i * 1010))
+    }
+    expect(verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')).toBeUndefined()
+  })
+
   test('豁免文本之间夹带复读广告 → 剩余部分照常判 D1', () => {
     const engine = createDetectionEngine()
     const seq = ['?', '加群123456', '？', '加群123456', '[doge]', '加群123456']
