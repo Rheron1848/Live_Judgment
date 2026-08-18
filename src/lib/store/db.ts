@@ -1,5 +1,5 @@
 const DB_NAME = 'live-judgment'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 /** 弹幕记录保留时长（7 天）；incidents 永久保留（spec 004 决策 5）/ Danmaku retention (7 days); incidents are kept forever. */
 export const DANMAKU_RETENTION_MS = 7 * 24 * 3600 * 1000
@@ -29,6 +29,11 @@ export function openDatabase(): Promise<IDBDatabase> {
           autoIncrement: true,
         })
         blockwords.createIndex('room', 'roomId')
+      }
+      if (event.oldVersion < 3) {
+        // 按用户屏蔽只需全量列举（条目量小），不建索引。
+        // User mutes are only ever listed in full (small table), so no index is created.
+        db.createObjectStore('usermutes', { keyPath: 'id', autoIncrement: true })
       }
     }
     req.onsuccess = () => resolve(req.result)

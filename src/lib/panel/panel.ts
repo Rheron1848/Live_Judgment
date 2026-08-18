@@ -2,6 +2,7 @@ import { resolveAnchorName } from '../store/anchor'
 import type { BlockWordEntry } from '../store/blockwords'
 import { danmakuByUid } from '../store/danmaku'
 import { clearIncidents, deleteIncidentsByUid, incidentsByUid } from '../store/incidents'
+import type { UserMuteEntry } from '../store/usermutes'
 import type { WatchlistEntry } from '../store/watchlist'
 import { buildUserViewModel, type IncidentView, type UserViewModel } from './view-model'
 
@@ -16,6 +17,9 @@ export interface PanelContext {
   listBlockWords(): BlockWordEntry[]
   addBlockWord(entry: BlockWordEntry): Promise<void>
   removeBlockWord(id: number): Promise<void>
+  listUserMutes(): UserMuteEntry[]
+  addUserMute(entry: UserMuteEntry): Promise<void>
+  removeUserMute(id: number): Promise<void>
 }
 
 export interface Panel {
@@ -135,7 +139,7 @@ export function createPanel(ctx: PanelContext): Panel {
       tab = 'watchlist'
       render()
     })
-    const blockTab = el('span', `tab${tab === 'blockwords' ? ' tab--active' : ''}`, '屏蔽词')
+    const blockTab = el('span', `tab${tab === 'blockwords' ? ' tab--active' : ''}`, '本地屏蔽')
     blockTab.addEventListener('click', () => {
       tab = 'blockwords'
       render()
@@ -263,6 +267,44 @@ export function createPanel(ctx: PanelContext): Panel {
         'danger',
       ),
     )
+    // 本地屏蔽（隐藏其弹幕）与人工名单（标记观察）是两种处置，并列给出。
+    // Local mute (hide messages) and manual watchlist (mark & observe) are different dispositions; offer both.
+    const activeMutes = ctx
+      .listUserMutes()
+      .filter((m) => m.uid === uid && (m.roomId === 0 || m.roomId === ctx.currentRoomId))
+    if (activeMutes.length > 0) {
+      row.appendChild(
+        button('解除本地屏蔽', () => {
+          void (async () => {
+            for (const m of activeMutes) {
+              if (m.id !== undefined) await ctx.removeUserMute(m.id)
+            }
+          })().then(render)
+        }),
+      )
+    } else {
+      const scope = document.createElement('select')
+      const optRoom = document.createElement('option')
+      optRoom.value = 'room'
+      optRoom.textContent = '本房间'
+      const optGlobal = document.createElement('option')
+      optGlobal.value = 'global'
+      optGlobal.textContent = '全局'
+      scope.append(optRoom, optGlobal)
+      row.appendChild(scope)
+      row.appendChild(
+        button('本地屏蔽此人', () => {
+          void ctx
+            .addUserMute({
+              uid,
+              uname,
+              roomId: scope.value === 'global' ? 0 : ctx.currentRoomId,
+              addedAt: Date.now(),
+            })
+            .then(render)
+        }),
+      )
+    }
     return row
   }
 
@@ -325,6 +367,32 @@ export function createPanel(ctx: PanelContext): Panel {
         row.appendChild(
           button('删除', () => {
             if (item.id !== undefined) void ctx.removeBlockWord(item.id).then(render)
+          }),
+        )
+        section.appendChild(row)
+      }
+      body.appendChild(section)
+    }
+
+    // 本地屏蔽的用户分组（本房间/全局），解除走同一 reapply 链路 / Locally muted-user groups (room/global); unmute reuses the same reapply path.
+    const mutes = ctx.listUserMutes()
+    const muteGroups: Array<{ title: string; items: UserMuteEntry[] }> = [
+      {
+        title: `本地屏蔽 · 本房间（${ctx.currentRoomId}）`,
+        items: mutes.filter((m) => m.roomId === ctx.currentRoomId),
+      },
+      { title: '本地屏蔽 · 全局', items: mutes.filter((m) => m.roomId === 0) },
+    ]
+    for (const group of muteGroups) {
+      const section = el('div', 'section')
+      section.appendChild(el('h3', '', `${group.title}（${group.items.length}）`))
+      if (group.items.length === 0) section.appendChild(el('div', 'muted', '暂无本地屏蔽用户'))
+      for (const item of group.items) {
+        const row = el('div', 'item')
+        row.appendChild(el('span', '', `${item.uname}（uid: ${item.uid}）`))
+        row.appendChild(
+          button('解除', () => {
+            if (item.id !== undefined) void ctx.removeUserMute(item.id).then(render)
           }),
         )
         section.appendChild(row)

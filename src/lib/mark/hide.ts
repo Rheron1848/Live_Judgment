@@ -15,12 +15,17 @@ export function unhideElement(el: HTMLElement): void {
   el.classList.remove(HIDDEN_CLASS)
 }
 
-/** 词条变更后按 data-danmaku 重读文本逐条重判：隐藏新命中的，恢复不再命中的。
- *  Re-judge on-screen items by their data-danmaku text after entries change: hide new hits, restore the rest. */
-export function reapplyHiding(matcher: BlockWordMatcher, root: ParentNode = document): void {
+/** 词条或屏蔽名单变更后逐条重判在屏弹幕：文本命中屏蔽词或 uid 命中屏蔽名单即隐藏，否则恢复。
+ *  Re-judge on-screen items after block words or user mutes change: hide on a text hit or a muted uid, restore the rest. */
+export function reapplyHiding(
+  matcher: BlockWordMatcher,
+  isUidMuted: (uid: number) => boolean,
+  root: ParentNode = document,
+): void {
   for (const el of root.querySelectorAll<HTMLElement>(ITEM_SELECTOR)) {
     const text = el.dataset.danmaku
-    if (text && matcher.test(text)) hideElement(el)
+    const uid = Number(el.dataset.uid)
+    if ((text && matcher.test(text)) || (Number.isFinite(uid) && isUidMuted(uid))) hideElement(el)
     else unhideElement(el)
   }
 }

@@ -24,11 +24,18 @@ import { DanmakuBuffer } from './lib/store/danmaku'
 import { openDatabase, pruneExpiredDanmaku } from './lib/store/db'
 import { addIncident } from './lib/store/incidents'
 import {
+  addUserMute,
+  listUserMutes,
+  removeUserMute,
+  type UserMuteEntry,
+} from './lib/store/usermutes'
+import {
   addToWatchlist,
   listWatchlist,
   removeFromWatchlist,
   type WatchlistEntry,
 } from './lib/store/watchlist'
+import { isMuted } from './lib/usermute/mute'
 
 async function main(roomId: number): Promise<void> {
   const engine = createDetectionEngine()
@@ -38,9 +45,10 @@ async function main(roomId: number): Promise<void> {
   let db: IDBDatabase | null = null
   let buffer: DanmakuBuffer | null = null
   let watchlist = new Map<number, WatchlistEntry>()
-  // db 不可用时 blockWords 退化为会话级内存表（与 watchlist 同款降级）。
-  // blockWords degrades to a session-scoped in-memory table when db is unavailable (same as watchlist).
+  // db 不可用时 blockWords / userMutes 退化为会话级内存表（与 watchlist 同款降级）。
+  // blockWords/userMutes degrade to session-scoped in-memory tables when db is unavailable (same as watchlist).
   let blockWords: BlockWordEntry[] = []
+  let userMutes: UserMuteEntry[] = []
 
   try {
     db = await openDatabase()
@@ -48,20 +56,24 @@ async function main(roomId: number): Promise<void> {
     buffer = new DanmakuBuffer(db)
     watchlist = new Map((await listWatchlist(db)).map((e) => [e.uid, e]))
     blockWords = await listBlockWords(db)
+    userMutes = await listUserMutes(db)
   } catch (err) {
     console.warn('[LiveJudgment] persistence unavailable, degrading to in-memory', err)
   }
 
   // 内存表是唯一事实源：增删后重建 matcher 并对在屏弹幕重判，即时生效。
-  // The in-memory table is the single source of truth: rebuild the matcher and re-judge on-screen items after every change.
+  // The in-memory tables are the single source of truth: rebuild the matcher and re-judge on-screen items after every change.
   let blockWordMatcher = compileBlockWords(blockWords, roomId)
+  const isUidMuted = (uid: number) => isMuted(uid, roomId, userMutes)
+  const reapplyAll = () => reapplyHiding(blockWordMatcher, isUidMuted)
   const rebuildBlockWordMatcher = () => {
     blockWordMatcher = compileBlockWords(blockWords, roomId)
-    reapplyHiding(blockWordMatcher)
+    reapplyAll()
   }
   // 内存模式下自增 id 用负数区段，避免与 IndexedDB 正数自增键混淆。
   // In-memory ids use the negative range so they never collide with IndexedDB's positive auto-increment keys.
   let memBlockWordId = 0
+  let memUserMuteId = 0
 
   // 已落库的判定按 uid:rule:confidence 去重，同会话不重复记档。
   // Incidents are deduped by uid:rule:confidence within a session.
@@ -116,6 +128,18 @@ async function main(roomId: number): Promise<void> {
       blockWords = blockWords.filter((e) => e.id !== id)
       rebuildBlockWordMatcher()
     },
+    listUserMutes: () => [...userMutes],
+    async addUserMute(entry) {
+      if (db) entry.id = await addUserMute(db, entry)
+      else entry.id = --memUserMuteId
+      userMutes.push(entry)
+      reapplyAll()
+    },
+    async removeUserMute(id) {
+      if (db) await removeUserMute(db, id)
+      userMutes = userMutes.filter((e) => e.id !== id)
+      reapplyAll()
+    },
   })
 
   // 徽章点击 → 打开用户面板（事件委托）/ Badge click → open the user panel (event delegation).
@@ -131,14 +155,14 @@ async function main(roomId: number): Promise<void> {
   // Tampermonkey 菜单入口；无 GM 环境（如 CDP 注入调试）时跳过 / Tampermonkey menu entry; skipped without a GM environment (e.g. CDP injection).
   if (typeof GM_registerMenuCommand === 'function') {
     GM_registerMenuCommand('Live Judgment 名单管理', () => panel.openWatchlist())
-    GM_registerMenuCommand('Live Judgment 屏蔽词管理', () => panel.openBlockWords())
+    GM_registerMenuCommand('Live Judgment 本地屏蔽管理', () => panel.openBlockWords())
   }
 
   // 开播前已在屏的名单用户弹幕补标 / Retro-mark on-screen messages from watchlisted users.
   for (const entry of watchlist.values()) markManualExisting(entry)
 
-  // 启动时对已在屏弹幕按屏蔽词重判一次 / Re-judge on-screen messages against block words once at startup.
-  reapplyHiding(blockWordMatcher)
+  // 启动时对已在屏弹幕按屏蔽词与屏蔽名单重判一次 / Re-judge on-screen messages against block words and user mutes once at startup.
+  reapplyAll()
 
   const source = createDomChatSource(roomId)
   source.start((event) => {
@@ -151,9 +175,9 @@ async function main(roomId: number): Promise<void> {
       ts: event.ts,
     })
     if (!event.el) return
-    // 命中屏蔽词只做本地隐藏，引擎 ingest 与落库照常（屏蔽 ≠ 放过违规）。
-    // Block-word hits only hide locally; engine ingest and persistence still ran above (hiding ≠ excusing).
-    if (blockWordMatcher.test(event.text)) hideElement(event.el)
+    // 命中屏蔽词或屏蔽名单只做本地隐藏，引擎 ingest 与落库照常（屏蔽 ≠ 放过违规）。
+    // Block-word/user-mute hits only hide locally; engine ingest and persistence still ran above (hiding ≠ excusing).
+    if (blockWordMatcher.test(event.text) || isUidMuted(event.uid)) hideElement(event.el)
     const entry = watchlist.get(event.uid)
     if (entry) markManual(event.el, entry)
     const verdict = engine.getVerdict(event.uid)
