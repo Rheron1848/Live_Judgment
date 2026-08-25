@@ -1,6 +1,6 @@
 import { requestToPromise, txComplete } from './db'
 
-/** 人工确认名单条目；自动检测永不写入（spec 004）/ Manual watchlist entry; the detector never writes here. */
+/** 标记名单条目（手动持久标记）；自动检测永不写入（spec 004）/ Watchlist entry (manual persistent mark); the detector never writes here. */
 export interface WatchlistEntry {
   uid: number
   uname: string

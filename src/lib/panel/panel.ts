@@ -50,13 +50,16 @@ export interface Panel {
 // 面板在 Shadow DOM 内，样式不会被 B 站页面污染；颜色走深色底，深浅主题下都可读。
 // The panel lives in a shadow root so page styles can't leak in; dark card reads fine on both site themes.
 const CSS = `
-.card { position: fixed; top: 80px; right: 16px; width: 360px; max-height: 70vh; overflow-y: auto; z-index: 99999;
+.card { position: fixed; top: 80px; right: 16px; width: 360px; max-height: 70vh; z-index: 99999;
+  display: flex; flex-direction: column;
   background: #1f2230; color: #e8e8e8; border-radius: 8px; padding: 12px; font: 12px/1.6 sans-serif;
   box-shadow: 0 4px 24px rgba(0,0,0,.5); }
-.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; cursor: move; user-select: none; }
+.header { flex: none; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; cursor: move; user-select: none; }
 .title { font-size: 14px; font-weight: 600; }
 .close { cursor: pointer; color: #999; padding: 0 4px; }
-.tabs { display: flex; gap: 8px; margin-bottom: 8px; }
+.tabs { flex: none; display: flex; gap: 8px; margin-bottom: 8px; }
+/* 滚动只发生在内容区，头部（含关闭按钮）与标签栏常驻 / Only the body scrolls; header (with close button) and tabs stay put. */
+.body { overflow-y: auto; min-height: 0; }
 .tab { cursor: pointer; padding: 2px 8px; border-radius: 4px; background: #2c3040; }
 .tab--active { background: #1e88e5; color: #fff; }
 .section { margin-top: 10px; }
@@ -67,6 +70,7 @@ const CSS = `
 .actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
 .act { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
 button { cursor: pointer; border: 0; border-radius: 4px; padding: 3px 8px; background: #2c3040; color: #e8e8e8; }
+button:disabled { opacity: .45; cursor: default; }
 button.danger { background: #7a2020; }
 input { flex: 1; min-width: 80px; background: #12141d; border: 1px solid #333; border-radius: 4px; color: #e8e8e8; padding: 3px 6px; }
 select { background: #12141d; border: 1px solid #333; border-radius: 4px; color: #e8e8e8; padding: 3px 6px; }
@@ -122,6 +126,8 @@ export function createPanel(ctx: PanelContext): Panel {
   // Display text for the last action result (Bilibili's message passed through); silence greys out for the session after a 100004.
   let actionMsg = ''
   let silenceDenied = false
+  // 弹幕历史分页：每页 30 条，最多展示最近 100 条（danmakuByUid 的 limit）/ Danmaku history paging: 30 per page, up to the latest 100. */
+  let danmakuPage = 0
 
   // 动作结果展示并触发重绘（按钮文案随状态刷新）/ Show an action result and re-render (button labels follow state).
   function showActionResult(res: ActionResult): void {
@@ -181,7 +187,7 @@ export function createPanel(ctx: PanelContext): Panel {
     tabs.append(userTab, watchTab, blockTab, settingsTab)
     card.appendChild(tabs)
 
-    const body = el('div')
+    const body = el('div', 'body')
     card.appendChild(body)
     root.appendChild(card)
 
@@ -239,11 +245,33 @@ export function createPanel(ctx: PanelContext): Panel {
     if (vm.danmaku.length === 0) {
       danmakuSection.appendChild(el('div', 'muted', '暂无记录'))
     }
-    for (const d of vm.danmaku) {
+    const DANMAKU_PAGE_SIZE = 30
+    const pageCount = Math.max(1, Math.ceil(vm.danmaku.length / DANMAKU_PAGE_SIZE))
+    danmakuPage = Math.min(Math.max(danmakuPage, 0), pageCount - 1)
+    const pageItems = vm.danmaku.slice(
+      danmakuPage * DANMAKU_PAGE_SIZE,
+      (danmakuPage + 1) * DANMAKU_PAGE_SIZE,
+    )
+    for (const d of pageItems) {
       const item = el('div', 'item')
       item.appendChild(el('span', 'muted', `${d.timeText} `))
       item.appendChild(el('span', '', d.text))
       danmakuSection.appendChild(item)
+    }
+    if (pageCount > 1) {
+      const pager = el('div', 'actions')
+      const prevBtn = button('上一页', () => {
+        danmakuPage -= 1
+        render()
+      })
+      prevBtn.disabled = danmakuPage === 0
+      const nextBtn = button('下一页', () => {
+        danmakuPage += 1
+        render()
+      })
+      nextBtn.disabled = danmakuPage >= pageCount - 1
+      pager.append(prevBtn, el('span', 'muted', `第 ${danmakuPage + 1} / ${pageCount} 页`), nextBtn)
+      danmakuSection.appendChild(pager)
     }
     wrap.appendChild(danmakuSection)
 
@@ -269,7 +297,7 @@ export function createPanel(ctx: PanelContext): Panel {
     const row = el('div', 'actions')
     if (ctx.getWatchlistEntry(uid)) {
       row.appendChild(
-        button('移出人工名单', () => {
+        button('移出标记名单', () => {
           void ctx.removeWatch(uid).then(render)
         }),
       )
@@ -278,7 +306,7 @@ export function createPanel(ctx: PanelContext): Panel {
       input.placeholder = '备注（可选）'
       row.appendChild(input)
       row.appendChild(
-        button('加入人工名单', () => {
+        button('加入标记名单', () => {
           const note = input.value.trim()
           void ctx
             .addWatch({
@@ -459,7 +487,7 @@ export function createPanel(ctx: PanelContext): Panel {
 
   function renderWatchlist(body: HTMLElement): void {
     const list = ctx.listWatchlist()
-    body.appendChild(el('h3', '', `人工名单（${list.length}）`))
+    body.appendChild(el('h3', '', `标记名单（${list.length}）`))
     if (list.length === 0) {
       body.appendChild(el('div', 'muted', '名单为空。点击弹幕上的徽章可将用户加入名单。'))
     }
@@ -628,8 +656,16 @@ export function createPanel(ctx: PanelContext): Panel {
 
     const rulesSec = el('div', 'section')
     rulesSec.appendChild(el('h3', '', '规则开关（关闭的规则不产生判定与徽章）'))
-    for (const id of ['D1', 'D2', 'D4', 'D8'] as const) {
-      rulesSec.appendChild(checkRow(id, s.rules[id], (v) => save({ rules: { [id]: v } })))
+    // 规则含义与 README 功能概览措辞保持一致 / Rule meanings kept in sync with the README feature overview.
+    const ruleLabels: Record<string, string> = {
+      D0: 'D0 手动复读嫌疑（淡色提醒，非自动化判定，可关闭）',
+      D1: 'D1 独轮车复读（重复刷屏 / 固定节拍 / 轮播）',
+      D2: 'D2 不可见字符规避',
+      D4: 'D4 自动融入（只跟风不发起）',
+      D8: 'D8 长文无关灌水',
+    }
+    for (const id of ['D0', 'D1', 'D2', 'D4', 'D8'] as const) {
+      rulesSec.appendChild(checkRow(ruleLabels[id], s.rules[id], (v) => save({ rules: { [id]: v } })))
     }
     body.appendChild(rulesSec)
 
@@ -660,6 +696,11 @@ export function createPanel(ctx: PanelContext): Panel {
 
     const exemptSec = el('div', 'section')
     exemptSec.appendChild(el('h3', '', `D1 豁免名单（${s.detect.d1.exemptTexts.length}）`))
+    // 内置正则豁免始终生效但不进可编辑名单，展示出来避免误以为失效（verdict.ts exemptPatterns）
+    // Built-in pattern exemptions are always on and not editable; shown here so users know they exist.
+    exemptSec.appendChild(
+      el('p', '', '内置豁免（始终生效，不可删除）：纯标点符号、[表情]、/名字/ 打call、\\名字/ 连打'),
+    )
     for (const text of s.detect.d1.exemptTexts) {
       const row = el('div', 'item')
       row.appendChild(el('span', '', text))
@@ -734,6 +775,7 @@ export function createPanel(ctx: PanelContext): Panel {
       currentUid = uid
       currentUname = uname
       actionMsg = ''
+      danmakuPage = 0
       tab = 'user'
       render()
     },
