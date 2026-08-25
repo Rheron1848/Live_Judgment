@@ -16,6 +16,14 @@
 
 详细需求见 [`docs/requirements.md`](docs/requirements.md)，设计规格见 [`docs/specs/`](docs/specs/)。
 
+## 安装
+
+1. 浏览器安装 [Tampermonkey](https://www.tampermonkey.net/) 或 Violentmonkey 扩展
+2. 到 [Releases](https://github.com/Rheron1848/Live_Judgment/releases) 下载最新 `live-judgment.user.js`，拖入扩展管理页安装（或新建脚本粘贴全部内容）
+3. 打开 B 站直播页面（live.bilibili.com）即生效
+
+注意：暂不支持自动更新，新版本需手动下载重装。
+
 ## 技术栈
 
 - Bun + Vite + TypeScript，构建为单文件 userscript
@@ -32,11 +40,11 @@ bun test test/     # 单测（必须限定 test/ 目录）
 bun run build      # 产物 dist/live-judgment.user.js
 ```
 
-真实直播间无人值守验收（CDP 无头方案）见 [`tools/README.md`](tools/README.md)。
+真实直播间无人值守验收（CDP 无头方案）见 [`tools/README.md`](tools/README.md)；发版流程见 [`docs/release.md`](docs/release.md)。
 
 ## License
 
-待定 / TBD
+[MIT](LICENSE)
 
 ---
 
@@ -58,6 +66,14 @@ Dedicated to Hazel.
 
 See [`docs/requirements.md`](docs/requirements.md) (Chinese) for the full requirements and [`docs/specs/`](docs/specs/) for design specs.
 
+## Installation
+
+1. Install the [Tampermonkey](https://www.tampermonkey.net/) or Violentmonkey browser extension
+2. Download the latest `live-judgment.user.js` from [Releases](https://github.com/Rheron1848/Live_Judgment/releases) and drag it into the extension's dashboard to install (or create a new script and paste the full contents)
+3. Open any Bilibili Live page (live.bilibili.com) — the script activates automatically
+
+Note: auto-update is not supported yet; new versions must be reinstalled manually.
+
 ## Tech stack
 
 - Bun + Vite + TypeScript, built as a single-file userscript
@@ -74,8 +90,8 @@ bun test test/     # unit tests (must scope to test/)
 bun run build      # outputs dist/live-judgment.user.js
 ```
 
-Unattended acceptance against real live rooms (headless CDP) is documented in [`tools/README.md`](tools/README.md).
+Unattended acceptance against real live rooms (headless CDP) is documented in [`tools/README.md`](tools/README.md); the release process is documented in [`docs/release.md`](docs/release.md) (Chinese).
 
 ## License
 
-TBD
+[MIT](LICENSE)
