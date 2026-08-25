@@ -33,7 +33,7 @@ gh release create vX.Y.Z dist/live-judgment.user.js \
   token 只走管道，不落地、不打印。
 - Git Bash 会话在安装 gh 之前启动时 PATH 不含 gh，用全路径 `"/c/Program Files/GitHub CLI/gh.exe"` 调用。
 
-## 产物安装的已知限制
+## 自动更新
 
-- 产物无 `@downloadURL` / `@updateURL`，Tampermonkey 不会自动更新，用户需手动下载新版本重装。
-- 如需自动更新：在 `vite.config.ts` 的 userscript 配置中加 `@downloadURL`/`@updateURL` 指向 release 资产，重新构建发布。
+- 产物头部带 `@downloadURL` / `@updateURL`（在 `vite.config.ts` 的 userscript 配置中），指向 `releases/latest/download/live-judgment.user.js` 固定链接，Tampermonkey / Violentmonkey 会自动更新。
+- 2026-08-25 变更：v0.1.0 发布时产物无这两个字段，后补加并就地覆盖了 release 资产（`gh release upload --clobber`）；此前手动安装的旧副本没有 `@updateURL`，不会自动更新，需重装一次。

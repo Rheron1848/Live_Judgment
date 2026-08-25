@@ -10,7 +10,7 @@
 
 - **异常行为检测**：基于弹幕内容与发送时序识别四类模式——D1 独轮车复读（复读/固定节拍/轮播）、D2 不可见字符规避、D4 自动融入（只跟风不发起）、D8 长文无关刷屏；判定为概率性标记（类别 + 置信度 + 证据），应援类正常文化（打call、`[表情]`、`/名字/` 等）已豁免
 - **用户标记**：被识别用户的弹幕在聊天区挂彩色徽章，悬停显示规则与置信度，点击徽章打开用户面板
-- **弹幕记录与违规档案**：本地持久化（IndexedDB）弹幕历史；违规档案跨场次、跨房间累积，可见该用户在各主播直播间的历史记录；人工确认名单持久生效、入场即标
+- **弹幕记录与违规档案**：本地持久化（IndexedDB）弹幕历史；违规档案跨场次、跨房间累积，可见该用户在各主播直播间的历史记录；标记名单（手动持久标记）跨场次生效、入场即标
 - **本地屏蔽**：自定义屏蔽词（按直播间归档 + 全局组，支持正则）与本地屏蔽此人（本房间 / 全局两级）——仅自己浏览器生效，被屏蔽弹幕照常进检测与记录
 - **快捷处置**（依赖登录态，二次确认，永不自动执行）：官方屏蔽（个人级，服务端新会话生效）、拉黑（账号黑名单）、举报选中弹幕（唤出官方举报面板）；禁言需房管权限，无权限置灰
 
@@ -22,7 +22,7 @@
 2. 到 [Releases](https://github.com/Rheron1848/Live_Judgment/releases) 下载最新 `live-judgment.user.js`，拖入扩展管理页安装（或新建脚本粘贴全部内容）
 3. 打开 B 站直播页面（live.bilibili.com）即生效
 
-注意：暂不支持自动更新，新版本需手动下载重装。
+脚本带有 `@updateURL`，Tampermonkey / Violentmonkey 会自动检查并更新到新版本。
 
 ## 技术栈
 
@@ -60,7 +60,7 @@ Dedicated to Hazel.
 
 - **Behavior detection**: four rule families from message content and send timing — D1 repeat loops (repeat / fixed cadence / carousel), D2 invisible-character evasion, D4 bandwagon-only joining, D8 long off-topic flooding; verdicts are probabilistic (rule + confidence + evidence), with normal cheering culture exempted (打call, `[emote]`, `/name/`, etc.)
 - **User flagging**: colored badges on flagged users' messages; hover for rule/confidence, click to open the user panel
-- **History & records**: local persistence (IndexedDB) of danmaku history; violation records accumulate across sessions and rooms, showing a user's history in each anchor's live room; a manual watchlist persists and marks on sight
+- **History & records**: local persistence (IndexedDB) of danmaku history; violation records accumulate across sessions and rooms, showing a user's history in each anchor's live room; a manual watch list (persistent marking) persists and marks on sight
 - **Local muting**: custom block words (per-room + global groups, regex supported) and per-user local mute (room / global scopes) — browser-local only; muted messages still flow into detection and records
 - **Quick actions** (login required, double-confirmed, never automatic): official shield (personal, server-side on new sessions), block (account blacklist), report selected danmaku (opens the official report panel); silence requires moderator privileges and is disabled otherwise
 
@@ -72,7 +72,7 @@ See [`docs/requirements.md`](docs/requirements.md) (Chinese) for the full requir
 2. Download the latest `live-judgment.user.js` from [Releases](https://github.com/Rheron1848/Live_Judgment/releases) and drag it into the extension's dashboard to install (or create a new script and paste the full contents)
 3. Open any Bilibili Live page (live.bilibili.com) — the script activates automatically
 
-Note: auto-update is not supported yet; new versions must be reinstalled manually.
+The script carries `@updateURL`, so Tampermonkey / Violentmonkey will check for and install new versions automatically.
 
 ## Tech stack
 

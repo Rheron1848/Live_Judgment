@@ -11,6 +11,14 @@ export default defineConfig({
         namespace: 'live-judgment',
         description:
           '识别并标记直播间内的独轮车、自动融入等异常发言行为，支持弹幕记录、快捷处置与屏蔽词过滤',
+        author: 'Rheron1848',
+        license: 'MIT',
+        homepageURL: 'https://github.com/Rheron1848/Live_Judgment',
+        supportURL: 'https://github.com/Rheron1848/Live_Judgment/issues',
+        downloadURL:
+          'https://github.com/Rheron1848/Live_Judgment/releases/latest/download/live-judgment.user.js',
+        updateURL:
+          'https://github.com/Rheron1848/Live_Judgment/releases/latest/download/live-judgment.user.js',
         match: ['*://live.bilibili.com/*'],
         'run-at': 'document-idle',
         grant: ['GM_registerMenuCommand'],
