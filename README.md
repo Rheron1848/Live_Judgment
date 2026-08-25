@@ -1,6 +1,10 @@
 # Live Judgment
 
-B 站直播弹幕治理油猴脚本：自动识别直播间内的异常发言行为（独轮车刷屏、自动融入跟风、规避性复读、长文无关灌水），在聊天区直接标记可疑用户，提供其弹幕记录与违规档案，并支持本地屏蔽与官方快捷处置。
+检测与屏蔽B站直播的弹幕油猴脚本：自动识别直播间内的异常发言行为（独轮车刷屏、自动融入跟风、规避性复读、长文无关灌水），在聊天区直接标记可疑用户，提供其弹幕记录与违规档案，并支持本地屏蔽与官方快捷处置。
+
+开发过程中使用了kimi-K3。
+
+献给灰泽满Hazel。
 
 ## 功能概览
 
@@ -39,6 +43,10 @@ bun run build      # 产物 dist/live-judgment.user.js
 # Live Judgment (English)
 
 A userscript for Bilibili Live chat moderation: detects abusive messaging behaviors (repeat-spam loops, bandwagon-only auto-blend posters, invisible-character evasion, long off-topic flooding), flags suspicious users inline in the chat panel, keeps their danmaku history and cross-session violation records, and offers local muting plus official quick actions.
+
+Kimi K3 was employed during development.
+
+Dedicated to Hazel.
 
 ## Features
 
