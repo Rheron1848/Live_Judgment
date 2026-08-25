@@ -20,7 +20,6 @@ import {
 import { createPanel } from './lib/panel/panel'
 import { parseRoomId } from './lib/room'
 import { mergeConfig, type SettingsOverride } from './lib/settings/config'
-import type { DanmakuEvent } from './lib/types'
 import { resolveAnchorName } from './lib/store/anchor'
 import {
   addBlockWord,
@@ -53,6 +52,7 @@ import {
   removeFromWatchlist,
   type WatchlistEntry,
 } from './lib/store/watchlist'
+import type { DanmakuEvent } from './lib/types'
 import { isMuted } from './lib/usermute/mute'
 
 async function main(roomId: number): Promise<void> {

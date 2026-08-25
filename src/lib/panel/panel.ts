@@ -665,7 +665,9 @@ export function createPanel(ctx: PanelContext): Panel {
       D8: 'D8 长文无关灌水',
     }
     for (const id of ['D0', 'D1', 'D2', 'D4', 'D8'] as const) {
-      rulesSec.appendChild(checkRow(ruleLabels[id], s.rules[id], (v) => save({ rules: { [id]: v } })))
+      rulesSec.appendChild(
+        checkRow(ruleLabels[id], s.rules[id], (v) => save({ rules: { [id]: v } })),
+      )
     }
     body.appendChild(rulesSec)
 
@@ -699,7 +701,11 @@ export function createPanel(ctx: PanelContext): Panel {
     // 内置正则豁免始终生效但不进可编辑名单，展示出来避免误以为失效（verdict.ts exemptPatterns）
     // Built-in pattern exemptions are always on and not editable; shown here so users know they exist.
     exemptSec.appendChild(
-      el('p', '', '内置豁免（始终生效，不可删除）：纯标点符号、[表情]、/名字/ 打call、\\名字/ 连打'),
+      el(
+        'p',
+        '',
+        '内置豁免（始终生效，不可删除）：纯标点符号、[表情]、/名字/ 打call、\\名字/ 连打',
+      ),
     )
     for (const text of s.detect.d1.exemptTexts) {
       const row = el('div', 'item')
