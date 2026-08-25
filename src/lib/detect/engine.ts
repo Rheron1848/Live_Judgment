@@ -3,7 +3,13 @@ import { checkRepeatLoop } from './rules/d1-repeat'
 import { checkInvisibleChars } from './rules/d2-invisible'
 import { BandwagonTracker } from './rules/d4-bandwagon'
 import { checkLongOfftopic } from './rules/d8-long-offtopic'
-import { type DetectConfig, defaultDetectConfig, type RuleHit, type UserVerdict } from './verdict'
+import {
+  type DetectConfig,
+  defaultDetectConfig,
+  type RuleHit,
+  type RuleId,
+  type UserVerdict,
+} from './verdict'
 import { SlidingWindow } from './window'
 
 export type { UserVerdict } from './verdict'
@@ -20,17 +26,27 @@ export interface DetectionEngine {
 
 const CONFIDENCE_RANK: Record<string, number> = { medium: 1, high: 2 }
 
-export function createDetectionEngine(config: DetectConfig = defaultDetectConfig): DetectionEngine {
+/**
+ * config 可传取值函数实现热更新（规则每次调用取最新值，设置变更不重建引擎、保住窗口状态）；
+ * isRuleEnabled 控制规则开关，被关规则整条跳过判定。
+ * config may be a getter for hot updates (rules read the latest value per call; changing settings
+ * never rebuilds the engine, preserving window state); isRuleEnabled gates rules off entirely.
+ */
+export function createDetectionEngine(
+  config: DetectConfig | (() => DetectConfig) = defaultDetectConfig,
+  isRuleEnabled: (rule: RuleId) => boolean = () => true,
+): DetectionEngine {
+  const cfg = typeof config === 'function' ? config : () => config
   const userWindows = new Map<number, SlidingWindow<DanmakuEvent>>()
-  const globalWindow = new SlidingWindow<DanmakuEvent>(config.globalWindowMs)
-  const bandwagon = new BandwagonTracker(config.d4)
+  const globalWindow = new SlidingWindow<DanmakuEvent>(cfg().globalWindowMs)
+  const bandwagon = new BandwagonTracker(() => cfg().d4)
   const verdicts = new Map<number, UserVerdict>()
   const listeners = new Set<VerdictListener>()
 
   function userWindowOf(uid: number): SlidingWindow<DanmakuEvent> {
     let w = userWindows.get(uid)
     if (!w) {
-      w = new SlidingWindow<DanmakuEvent>(config.userWindowMs, config.userWindowMax)
+      w = new SlidingWindow<DanmakuEvent>(cfg().userWindowMs, cfg().userWindowMax)
       userWindows.set(uid, w)
     }
     return w
@@ -39,21 +55,29 @@ export function createDetectionEngine(config: DetectConfig = defaultDetectConfig
   function ingest(event: DanmakuEvent): void {
     const hits: RuleHit[] = []
 
-    const d2 = checkInvisibleChars(event.text)
-    if (d2) hits.push(d2)
+    if (isRuleEnabled('D2')) {
+      const d2 = checkInvisibleChars(event.text)
+      if (d2) hits.push(d2)
+    }
 
     const uw = userWindowOf(event.uid)
     uw.push(event)
     globalWindow.push(event)
 
-    const d1 = checkRepeatLoop(uw.values(), config.d1)
-    if (d1) hits.push(d1)
+    if (isRuleEnabled('D1')) {
+      const d1 = checkRepeatLoop(uw.values(), cfg().d1)
+      if (d1) hits.push(d1)
+    }
 
-    const d4 = bandwagon.onEvent(event, globalWindow.values())
-    if (d4) hits.push(d4)
+    if (isRuleEnabled('D4')) {
+      const d4 = bandwagon.onEvent(event, globalWindow.values())
+      if (d4) hits.push(d4)
+    }
 
-    const d8 = checkLongOfftopic(uw.values(), globalWindow.values(), config.d8)
-    if (d8) hits.push(d8)
+    if (isRuleEnabled('D8')) {
+      const d8 = checkLongOfftopic(uw.values(), globalWindow.values(), cfg().d8)
+      if (d8) hits.push(d8)
+    }
 
     if (hits.length > 0) mergeVerdict(event, hits)
   }

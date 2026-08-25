@@ -54,7 +54,7 @@ describe('danmaku 记录', () => {
       ts: NOW - 30 * DAY,
     })
 
-    const deleted = await pruneExpiredDanmaku(db, NOW)
+    const deleted = await pruneExpiredDanmaku(db, 7, NOW)
     expect(deleted).toBe(1)
     expect(await danmakuByUid(db, 1)).toHaveLength(1)
     expect(await incidentsByUid(db, 1)).toHaveLength(1)

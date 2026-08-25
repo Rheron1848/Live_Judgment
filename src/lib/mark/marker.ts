@@ -12,7 +12,23 @@ const CSS = `
 .lj-badge { display: inline-block; padding: 0 3px; border-radius: 3px; font-size: 10px; line-height: 14px; color: #fff; cursor: help; user-select: none; }
 .lj-badge--soft { opacity: 0.55; }
 .lj-hidden { display: none !important; }
+.lj-highlight { background: rgba(255, 171, 0, .22) !important; }
+.lj-marked { background: rgba(30, 136, 229, .14) !important; }
 `
+
+const HIGHLIGHT_MARK_CLASS = 'lj-marked'
+
+// 设置页可切换的整条高亮开关（默认关）；模块级状态避免给 mark* 系列函数逐个加参数。
+// Settings-toggled whole-item highlight (default off); module-level state avoids threading a param through every mark* call.
+let markHighlightEnabled = false
+
+/** 切换整条高亮并立即刷新在屏已标记弹幕 / Toggle whole-item highlight and re-tint on-screen marked items immediately. */
+export function setMarkHighlight(enabled: boolean, root: ParentNode = document): void {
+  markHighlightEnabled = enabled
+  for (const el of root.querySelectorAll<HTMLElement>(ITEM_SELECTOR)) {
+    if (el.querySelector(':scope > .lj-badges')) el.classList.toggle(HIGHLIGHT_MARK_CLASS, enabled)
+  }
+}
 
 /** 注入徽章样式（幂等）/ Inject badge styles (idempotent). */
 export function ensureStyle(doc: Document = document): void {
@@ -46,6 +62,7 @@ function slotOf(el: HTMLElement, slot: 'auto' | 'manual'): HTMLElement {
 export function markElement(el: HTMLElement, verdict: UserVerdict): void {
   ensureStyle(el.ownerDocument)
   const slot = slotOf(el, 'auto')
+  el.classList.toggle(HIGHLIGHT_MARK_CLASS, markHighlightEnabled)
   slot.replaceChildren(
     ...badgesForVerdict(verdict).map((spec) => {
       const badge = el.ownerDocument.createElement('span')
@@ -64,6 +81,7 @@ export function markManual(el: HTMLElement, entry: WatchlistEntry): void {
   const doc = el.ownerDocument
   ensureStyle(doc)
   const slot = slotOf(el, 'manual')
+  el.classList.toggle(HIGHLIGHT_MARK_CLASS, markHighlightEnabled)
   const badge = doc.createElement('span')
   badge.className = 'lj-badge'
   badge.style.backgroundColor = '#1e88e5'

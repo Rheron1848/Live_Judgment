@@ -22,14 +22,15 @@ export class BandwagonTracker {
   private trends = new Map<string, Trend>()
   private stats = new Map<number, UserStats>()
 
-  constructor(private readonly cfg: D4Config) {}
+  // 配置走取值函数：设置页改阈值后无需重建追踪器 / Config via getter: settings-page changes apply without rebuilding the tracker.
+  constructor(private readonly getCfg: () => D4Config) {}
 
   onEvent(event: DanmakuEvent, globalEvents: readonly DanmakuEvent[]): RuleHit | null {
     const norm = normalizeText(event.text)
     if (!norm) return null
 
     const existing = this.trends.get(norm)
-    if (existing && event.ts - existing.qualifiedAt > this.cfg.joinWindowMs) {
+    if (existing && event.ts - existing.qualifiedAt > this.getCfg().joinWindowMs) {
       // 趋势过期，允许之后重新达成 / Expired; allow re-qualification later.
       this.trends.delete(norm)
     }
@@ -50,23 +51,24 @@ export class BandwagonTracker {
     event: DanmakuEvent,
     globalEvents: readonly DanmakuEvent[],
   ): void {
-    const cutoff = event.ts - this.cfg.trendWindowMs
+    const cutoff = event.ts - this.getCfg().trendWindowMs
     const recent = globalEvents.filter((e) => e.ts >= cutoff && normalizeText(e.text) === norm)
     const uids = new Set(recent.map((e) => e.uid))
-    if (uids.size < this.cfg.trendMinUids || recent.length < this.cfg.trendMinCount) return
+    if (uids.size < this.getCfg().trendMinUids || recent.length < this.getCfg().trendMinCount)
+      return
     this.trends.set(norm, { qualifiedAt: event.ts, earlyUids: uids })
     for (const uid of uids) this.userStats(uid).earlyCount++
   }
 
   private evaluate(uid: number): RuleHit | null {
     const s = this.stats.get(uid)
-    if (!s || s.joinLatencies.length < this.cfg.joinsForMedium || s.earlyCount > 0) return null
+    if (!s || s.joinLatencies.length < this.getCfg().joinsForMedium || s.earlyCount > 0) return null
     const avg = s.joinLatencies.reduce((a, b) => a + b, 0) / s.joinLatencies.length
-    if (avg > this.cfg.maxAvgLatencyMs) return null
+    if (avg > this.getCfg().maxAvgLatencyMs) return null
     const joins = s.joinLatencies.length
     return {
       rule: 'D4',
-      confidence: joins >= this.cfg.joinsForHigh ? 'high' : 'medium',
+      confidence: joins >= this.getCfg().joinsForHigh ? 'high' : 'medium',
       evidence: [`跟风 ${joins} 次，早期参与 0 次，平均延迟 ${(avg / 1000).toFixed(1)}s`],
     }
   }

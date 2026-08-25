@@ -7,16 +7,18 @@ import { silenceUser as silenceUserApi } from './lib/action/silence'
 import { compileBlockWords } from './lib/blockword/matcher'
 import { createDetectionEngine } from './lib/detect/engine'
 import { createDomChatSource } from './lib/dom-chat-source'
-import { hideElement, reapplyHiding } from './lib/mark/hide'
+import { hideElement, highlightElement, reapplyHiding } from './lib/mark/hide'
 import {
   markElement,
   markExisting,
   markManual,
   markManualExisting,
+  setMarkHighlight,
   unmarkManual,
 } from './lib/mark/marker'
 import { createPanel } from './lib/panel/panel'
 import { parseRoomId } from './lib/room'
+import { mergeConfig, type SettingsOverride } from './lib/settings/config'
 import { resolveAnchorName } from './lib/store/anchor'
 import {
   addBlockWord,
@@ -33,6 +35,11 @@ import {
   setOfficialShield,
 } from './lib/store/officialshields'
 import {
+  loadSettings,
+  resetSettings as resetSettingsStore,
+  saveSettings as saveSettingsStore,
+} from './lib/store/settings'
+import {
   addUserMute,
   listUserMutes,
   removeUserMute,
@@ -47,7 +54,14 @@ import {
 import { isMuted } from './lib/usermute/mute'
 
 async function main(roomId: number): Promise<void> {
-  const engine = createDetectionEngine()
+  // 设置先于引擎就位：引擎经取值函数读 settings，改设置不重建引擎（保住窗口状态）。
+  // Settings come first: the engine reads them via getters so changes never rebuild it (windows survive).
+  let settingsOverride: SettingsOverride = {}
+  let settings = mergeConfig(settingsOverride)
+  const engine = createDetectionEngine(
+    () => settings.detect,
+    (rule) => settings.rules[rule],
+  )
 
   // 持久化不可用时降级为纯内存检测，不中断标记功能。
   // Degrade to in-memory detection when persistence is unavailable; marking still works.
@@ -64,7 +78,9 @@ async function main(roomId: number): Promise<void> {
 
   try {
     db = await openDatabase()
-    await pruneExpiredDanmaku(db)
+    settingsOverride = await loadSettings(db)
+    settings = mergeConfig(settingsOverride)
+    await pruneExpiredDanmaku(db, settings.retentionDays)
     buffer = new DanmakuBuffer(db)
     watchlist = new Map((await listWatchlist(db)).map((e) => [e.uid, e]))
     blockWords = await listBlockWords(db)
@@ -80,11 +96,26 @@ async function main(roomId: number): Promise<void> {
   // The in-memory tables are the single source of truth: rebuild the matcher and re-judge on-screen items after every change.
   let blockWordMatcher = compileBlockWords(blockWords, roomId)
   const isUidMuted = (uid: number) => isMuted(uid, roomId, userMutes)
-  const reapplyAll = () => reapplyHiding(blockWordMatcher, isUidMuted)
+  const reapplyAll = () => reapplyHiding(blockWordMatcher, isUidMuted, settings.f6Mode)
   const rebuildBlockWordMatcher = () => {
     blockWordMatcher = compileBlockWords(blockWords, roomId)
     reapplyAll()
   }
+  // 设置应用入口：标记样式 + 隐藏/高亮模式统一刷新在屏弹幕。
+  // Settings application entry: mark style + hide/highlight mode refresh on-screen items together.
+  const applySettings = () => {
+    setMarkHighlight(settings.markHighlight)
+    reapplyAll()
+  }
+  // 覆盖项按节合并（面板只发改动的那一节）/ Overrides merge per section (the panel sends only the section that changed).
+  const mergeOverride = (patch: SettingsOverride): SettingsOverride => ({
+    ...settingsOverride,
+    ...patch,
+    rules: patch.rules ? { ...settingsOverride.rules, ...patch.rules } : settingsOverride.rules,
+    d1: patch.d1 ? { ...settingsOverride.d1, ...patch.d1 } : settingsOverride.d1,
+    d4: patch.d4 ? { ...settingsOverride.d4, ...patch.d4 } : settingsOverride.d4,
+    d8: patch.d8 ? { ...settingsOverride.d8, ...patch.d8 } : settingsOverride.d8,
+  })
   // 内存模式下自增 id 用负数区段，避免与 IndexedDB 正数自增键混淆。
   // In-memory ids use the negative range so they never collide with IndexedDB's positive auto-increment keys.
   let memBlockWordId = 0
@@ -185,6 +216,22 @@ async function main(roomId: number): Promise<void> {
       if (!item) return { ok: false, message: '该用户当前没有在屏弹幕' }
       return driveOfficialReport(item)
     },
+    getSettings: () => settings,
+    async saveSettings(patch) {
+      settingsOverride = mergeOverride(patch)
+      if (db) await saveSettingsStore(db, settingsOverride)
+      settings = mergeConfig(settingsOverride)
+      applySettings()
+      // 保留天数改小立即按比例清理（每次保存顺带 prune，幂等低成本）。
+      // A smaller retention prunes immediately (prune runs on every save; idempotent and cheap).
+      if (db) void pruneExpiredDanmaku(db, settings.retentionDays)
+    },
+    async resetSettings() {
+      settingsOverride = {}
+      if (db) await resetSettingsStore(db)
+      settings = mergeConfig({})
+      applySettings()
+    },
   })
 
   // 徽章点击 → 打开用户面板（事件委托）/ Badge click → open the user panel (event delegation).
@@ -206,8 +253,8 @@ async function main(roomId: number): Promise<void> {
   // 开播前已在屏的名单用户弹幕补标 / Retro-mark on-screen messages from watchlisted users.
   for (const entry of watchlist.values()) markManualExisting(entry)
 
-  // 启动时对已在屏弹幕按屏蔽词与屏蔽名单重判一次 / Re-judge on-screen messages against block words and user mutes once at startup.
-  reapplyAll()
+  // 启动时对已在屏弹幕按屏蔽词与屏蔽名单重判一次，并应用标记样式设置 / Re-judge on-screen messages and apply the mark-style setting once at startup.
+  applySettings()
 
   const source = createDomChatSource(roomId)
   source.start((event) => {
@@ -220,9 +267,14 @@ async function main(roomId: number): Promise<void> {
       ts: event.ts,
     })
     if (!event.el) return
-    // 命中屏蔽词或屏蔽名单只做本地隐藏，引擎 ingest 与落库照常（屏蔽 ≠ 放过违规）。
-    // Block-word/user-mute hits only hide locally; engine ingest and persistence still ran above (hiding ≠ excusing).
-    if (blockWordMatcher.test(event.text) || isUidMuted(event.uid)) hideElement(event.el)
+    // 命中屏蔽名单始终隐藏；命中屏蔽词按设置隐藏或高亮；引擎 ingest 与落库照常（屏蔽 ≠ 放过违规）。
+    // User-mute hits always hide; block-word hits hide or highlight per settings; engine ingest and persistence still ran above (hiding ≠ excusing).
+    if (isUidMuted(event.uid)) {
+      hideElement(event.el)
+    } else if (blockWordMatcher.test(event.text)) {
+      if (settings.f6Mode === 'hide') hideElement(event.el)
+      else highlightElement(event.el)
+    }
     const entry = watchlist.get(event.uid)
     if (entry) markManual(event.el, entry)
     const verdict = engine.getVerdict(event.uid)

@@ -1,8 +1,9 @@
 const DB_NAME = 'live-judgment'
-const DB_VERSION = 4
+const DB_VERSION = 5
 
-/** 弹幕记录保留时长（7 天）；incidents 永久保留（spec 004 决策 5）/ Danmaku retention (7 days); incidents are kept forever. */
-export const DANMAKU_RETENTION_MS = 7 * 24 * 3600 * 1000
+/** 默认弹幕保留天数（7 天，2026-08-17 拍板；spec 010 起可在设置页改，1~30 天）；incidents 永久保留（spec 004 决策 5）。
+ *  Default danmaku retention (7 days, decided 2026-08-17; configurable in settings since spec 010, 1~30 days); incidents are kept forever. */
+export const DEFAULT_RETENTION_DAYS = 7
 
 /** 打开（必要时初始化）IndexedDB / Open (and initialize if needed) the IndexedDB database. */
 export function openDatabase(): Promise<IDBDatabase> {
@@ -40,15 +41,23 @@ export function openDatabase(): Promise<IDBDatabase> {
         // Official-shield state is a local optimistic record (the official read-back API is dead); key is a "uid:roomId" string.
         db.createObjectStore('officialshields', { keyPath: 'key' })
       }
+      if (event.oldVersion < 5) {
+        // 设置覆盖项：单键一条记录（稀疏对象）/ Settings overrides: one single-key record (sparse object).
+        db.createObjectStore('settings', { keyPath: 'key' })
+      }
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
   })
 }
 
-/** 删除过期弹幕，返回删除条数 / Delete danmaku older than retention; returns the count removed. */
-export function pruneExpiredDanmaku(db: IDBDatabase, now = Date.now()): Promise<number> {
-  const cutoff = now - DANMAKU_RETENTION_MS
+/** 删除过期弹幕，返回删除条数；保留天数可配（spec 010），默认 7 天 / Delete danmaku older than retention (configurable days, spec 010; default 7); returns the count removed. */
+export function pruneExpiredDanmaku(
+  db: IDBDatabase,
+  retentionDays = DEFAULT_RETENTION_DAYS,
+  now = Date.now(),
+): Promise<number> {
+  const cutoff = now - retentionDays * 24 * 3600 * 1000
   return new Promise((resolve, reject) => {
     const tx = db.transaction('danmaku', 'readwrite')
     const index = tx.objectStore('danmaku').index('ts')

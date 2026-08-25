@@ -1,5 +1,6 @@
 import type { ActionResult } from '../action/http'
 import { NO_PERMISSION_CODE } from '../action/silence'
+import type { EffectiveSettings, SettingsOverride } from '../settings/config'
 import { resolveAnchorName } from '../store/anchor'
 import type { BlockWordEntry } from '../store/blockwords'
 import { danmakuByUid } from '../store/danmaku'
@@ -33,6 +34,10 @@ export interface PanelContext {
   /** 该用户是否有在屏弹幕（举报入口只对在屏弹幕可用）/ Whether the user has an on-screen danmaku (report entry requires one). */
   hasOnScreenDanmaku(uid: number): boolean
   openOfficialReport(uid: number): Promise<ActionResult>
+  /** 设置：读生效配置 / 保存稀疏覆盖（按节合并）/ 清空重置 / Settings: read effective config / save sparse overrides (merged per section) / reset. */
+  getSettings(): EffectiveSettings
+  saveSettings(patch: SettingsOverride): Promise<void>
+  resetSettings(): Promise<void>
 }
 
 export interface Panel {
@@ -110,7 +115,7 @@ function makeDraggable(card: HTMLElement, handle: HTMLElement): void {
 export function createPanel(ctx: PanelContext): Panel {
   let host: HTMLElement | null = null
   let shadow: ShadowRoot | null = null
-  let tab: 'user' | 'watchlist' | 'blockwords' = 'user'
+  let tab: 'user' | 'watchlist' | 'blockwords' | 'settings' = 'user'
   let currentUid = 0
   let currentUname = ''
   // 处置结果的展示文案（B 站 message 原样透传）；禁言被回 100004 后整会话置灰。
@@ -168,7 +173,12 @@ export function createPanel(ctx: PanelContext): Panel {
       tab = 'blockwords'
       render()
     })
-    tabs.append(userTab, watchTab, blockTab)
+    const settingsTab = el('span', `tab${tab === 'settings' ? ' tab--active' : ''}`, '设置')
+    settingsTab.addEventListener('click', () => {
+      tab = 'settings'
+      render()
+    })
+    tabs.append(userTab, watchTab, blockTab, settingsTab)
     card.appendChild(tabs)
 
     const body = el('div')
@@ -177,7 +187,8 @@ export function createPanel(ctx: PanelContext): Panel {
 
     if (tab === 'user') void renderUser(body)
     else if (tab === 'watchlist') renderWatchlist(body)
-    else renderBlockWords(body)
+    else if (tab === 'blockwords') renderBlockWords(body)
+    else renderSettings(body)
   }
 
   async function renderUser(body: HTMLElement): Promise<void> {
@@ -570,6 +581,152 @@ export function createPanel(ctx: PanelContext): Panel {
       }),
     )
     body.appendChild(form)
+  }
+
+  // 设置页：每项改动即存（change 事件），非法值由 mergeConfig 拒绝并回退默认，重绘后自然显示生效值。
+  // Settings tab: every change saves immediately; invalid values are rejected by mergeConfig and fall back
+  // to defaults, so the re-rendered control simply shows the effective value.
+  function renderSettings(body: HTMLElement): void {
+    if (!ctx.db) {
+      body.appendChild(el('div', 'muted', '持久化不可用，设置不可修改（检测按默认值运行）'))
+      return
+    }
+    const s = ctx.getSettings()
+    const save = (patch: SettingsOverride) => void ctx.saveSettings(patch).then(render)
+
+    // 数字输入行：change 时提交 / Number input row: commits on change.
+    const numRow = (label: string, value: number, onCommit: (v: number) => void): HTMLElement => {
+      const row = el('div', 'act')
+      row.appendChild(el('span', '', label))
+      const input = document.createElement('input')
+      input.type = 'number'
+      input.value = String(value)
+      input.style.flex = '0 0 70px'
+      input.addEventListener('change', () => {
+        const v = Number(input.value)
+        if (Number.isFinite(v)) onCommit(v)
+      })
+      row.appendChild(input)
+      return row
+    }
+    const checkRow = (
+      label: string,
+      checked: boolean,
+      onCommit: (v: boolean) => void,
+    ): HTMLElement => {
+      const row = el('div', 'act')
+      const box = document.createElement('input')
+      box.type = 'checkbox'
+      box.checked = checked
+      box.style.flex = '0 0 auto'
+      box.addEventListener('change', () => onCommit(box.checked))
+      const lab = el('label')
+      lab.append(box, label)
+      row.appendChild(lab)
+      return row
+    }
+
+    const rulesSec = el('div', 'section')
+    rulesSec.appendChild(el('h3', '', '规则开关（关闭的规则不产生判定与徽章）'))
+    for (const id of ['D1', 'D2', 'D4', 'D8'] as const) {
+      rulesSec.appendChild(checkRow(id, s.rules[id], (v) => save({ rules: { [id]: v } })))
+    }
+    body.appendChild(rulesSec)
+
+    const thSec = el('div', 'section')
+    thSec.appendChild(el('h3', '', '关键阈值'))
+    thSec.appendChild(
+      numRow('D1 复读次数（≥2）', s.detect.d1.repeatMin, (v) => save({ d1: { repeatMin: v } })),
+    )
+    thSec.appendChild(
+      numRow('D1 窗口秒数（10~600）', s.detect.userWindowMs / 1000, (v) =>
+        save({ userWindowMs: v * 1000 }),
+      ),
+    )
+    thSec.appendChild(
+      numRow('D4 跟风次数（2~5）', s.detect.d4.joinsForMedium, (v) =>
+        save({ d4: { joinsForMedium: v } }),
+      ),
+    )
+    thSec.appendChild(
+      numRow('D8 长文字数（10~200）', s.detect.d8.minLen, (v) => save({ d8: { minLen: v } })),
+    )
+    thSec.appendChild(
+      numRow('D8 连续条数（≥2）', s.detect.d8.consecutiveMin, (v) =>
+        save({ d8: { consecutiveMin: v } }),
+      ),
+    )
+    body.appendChild(thSec)
+
+    const exemptSec = el('div', 'section')
+    exemptSec.appendChild(el('h3', '', `D1 豁免名单（${s.detect.d1.exemptTexts.length}）`))
+    for (const text of s.detect.d1.exemptTexts) {
+      const row = el('div', 'item')
+      row.appendChild(el('span', '', text))
+      row.appendChild(
+        button('删除', () =>
+          save({ d1: { exemptTexts: s.detect.d1.exemptTexts.filter((t) => t !== text) } }),
+        ),
+      )
+      exemptSec.appendChild(row)
+    }
+    const exemptForm = el('div', 'actions')
+    const exemptInput = document.createElement('input')
+    exemptInput.placeholder = '新增豁免文本'
+    exemptForm.append(
+      exemptInput,
+      button('添加', () => {
+        const t = exemptInput.value.trim()
+        if (!t) return
+        save({ d1: { exemptTexts: [...s.detect.d1.exemptTexts, t] } })
+      }),
+    )
+    exemptSec.appendChild(exemptForm)
+    body.appendChild(exemptSec)
+
+    const miscSec = el('div', 'section')
+    miscSec.appendChild(el('h3', '', '展示与数据'))
+    const f6Row = el('div', 'act')
+    f6Row.appendChild(el('span', '', '本地屏蔽词命中'))
+    for (const [mode, label] of [
+      ['hide', '隐藏'],
+      ['highlight', '高亮'],
+    ] as const) {
+      const lab = el('label')
+      const radio = document.createElement('input')
+      radio.type = 'radio'
+      radio.name = 'lj-f6mode'
+      radio.checked = s.f6Mode === mode
+      radio.style.flex = '0 0 auto'
+      radio.addEventListener('change', () => {
+        if (radio.checked) save({ f6Mode: mode })
+      })
+      lab.append(radio, label)
+      f6Row.appendChild(lab)
+    }
+    miscSec.appendChild(f6Row)
+    miscSec.appendChild(
+      checkRow('高亮整条被标记弹幕（默认关，仅徽章）', s.markHighlight, (v) =>
+        save({ markHighlight: v }),
+      ),
+    )
+    miscSec.appendChild(
+      numRow('弹幕保留天数（1~30）', s.retentionDays, (v) => save({ retentionDays: v })),
+    )
+    body.appendChild(miscSec)
+
+    const resetRow = el('div', 'actions')
+    resetRow.appendChild(
+      button(
+        '重置全部设置',
+        () => {
+          if (!confirm('确认清空全部设置覆盖项，恢复默认？')) return
+          void ctx.resetSettings().then(render)
+        },
+        'danger',
+      ),
+    )
+    body.appendChild(resetRow)
   }
 
   return {
