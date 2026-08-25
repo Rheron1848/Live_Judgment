@@ -17,7 +17,7 @@ describe('mergeConfig 默认兜底', () => {
   test('空覆盖 = 全默认', () => {
     const s = mergeConfig({})
     expect(s.detect).toEqual(defaultDetectConfig)
-    expect(s.rules).toEqual({ D1: true, D2: true, D4: true, D8: true })
+    expect(s.rules).toEqual({ D0: true, D1: true, D2: true, D4: true, D8: true })
     expect(s.f6Mode).toBe('hide')
     expect(s.markHighlight).toBe(false)
     expect(s.retentionDays).toBe(7)
@@ -114,7 +114,7 @@ describe('mergeConfig 非法值拒绝（回退默认）', () => {
 
 describe('引擎规则开关与热更新', () => {
   test('被关规则不产生判定', () => {
-    const engine = createDetectionEngine(undefined, (rule) => rule !== 'D1')
+    const engine = createDetectionEngine(undefined, (rule) => rule !== 'D1' && rule !== 'D0')
     for (let i = 0; i < 5; i++) engine.ingest(ev(1, '同一句话', T0 + i * 2000))
     expect(engine.getVerdict(1)).toBeUndefined()
 
@@ -128,10 +128,11 @@ describe('引擎规则开关与热更新', () => {
     const engine = createDetectionEngine(() => cfg)
     for (let i = 0; i < 3; i++) engine.ingest(ev(1, '同一句话', T0 + i * 2000))
     expect(engine.getVerdict(1)).toBeUndefined()
-    // 调低阈值后继续喂，同一条引擎实例按新阈值出判定 / Lower the threshold mid-stream; the same engine instance judges by the new value.
+    // 调低阈值后继续喂，同一条引擎实例按新阈值出判定（仅复读信号 → D0，spec 011）
+    // Lower the threshold mid-stream; the same engine instance judges by the new value (repeat-only → D0).
     cfg = mergeConfig({}).detect
     engine.ingest(ev(1, '同一句话', T0 + 6000))
-    expect(engine.getVerdict(1)?.hits.find((h) => h.rule === 'D1')).toBeTruthy()
+    expect(engine.getVerdict(1)?.hits.find((h) => h.rule === 'D0')).toBeTruthy()
   })
 })
 

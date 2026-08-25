@@ -30,7 +30,7 @@ export interface EffectiveSettings {
 
 export const defaultSettings: EffectiveSettings = {
   detect: defaultDetectConfig,
-  rules: { D1: true, D2: true, D4: true, D8: true },
+  rules: { D0: true, D1: true, D2: true, D4: true, D8: true },
   f6Mode: 'hide',
   markHighlight: false,
   retentionDays: 7,
@@ -47,7 +47,7 @@ function warnIgnored(field: string, value: unknown): void {
   console.warn(`[LiveJudgment] invalid setting ignored: ${field} =`, value)
 }
 
-const RULE_IDS: readonly RuleId[] = ['D1', 'D2', 'D4', 'D8']
+const RULE_IDS: readonly RuleId[] = ['D0', 'D1', 'D2', 'D4', 'D8']
 
 function sanitizeRules(
   rules: SettingsOverride['rules'],

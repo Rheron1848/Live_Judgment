@@ -13,3 +13,9 @@ export interface DanmakuEvent {
   /** 来源 DOM 节点，供标记渲染回指 / Source DOM node, for later marker rendering. */
   el?: HTMLElement
 }
+
+/** 带归一化文本缓存的事件（引擎 ingest 时算一次，窗口与规则共享，spec 011）/ Event with cached normalized text (computed once at ingest, shared by windows and rules). */
+export interface NormalizedEvent extends DanmakuEvent {
+  /** normalizeText(text) 的缓存结果 / Cached result of normalizeText(text). */
+  norm: string
+}

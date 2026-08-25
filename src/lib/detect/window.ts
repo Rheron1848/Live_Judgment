@@ -16,6 +16,16 @@ export class SlidingWindow<T extends { ts: number }> {
     return this.items
   }
 
+  /** 当前条数 / Current item count. */
+  get size(): number {
+    return this.items.length
+  }
+
+  /** 按外部时刻主动驱逐过期项（sweep/GC 用，无新事件时也能收缩）/ Evict stale items against an external clock (for sweep/GC without new events). */
+  prune(now: number): void {
+    this.evict(now)
+  }
+
   private evict(now: number): void {
     const cutoff = now - this.maxAgeMs
     let drop = 0

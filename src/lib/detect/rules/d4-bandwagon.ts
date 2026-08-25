@@ -1,5 +1,4 @@
-import type { DanmakuEvent } from '../../types'
-import { normalizeText } from '../normalize'
+import type { NormalizedEvent } from '../../types'
 import type { D4Config, RuleHit } from '../verdict'
 
 interface Trend {
@@ -25,8 +24,8 @@ export class BandwagonTracker {
   // 配置走取值函数：设置页改阈值后无需重建追踪器 / Config via getter: settings-page changes apply without rebuilding the tracker.
   constructor(private readonly getCfg: () => D4Config) {}
 
-  onEvent(event: DanmakuEvent, globalEvents: readonly DanmakuEvent[]): RuleHit | null {
-    const norm = normalizeText(event.text)
+  onEvent(event: NormalizedEvent, globalEvents: readonly NormalizedEvent[]): RuleHit | null {
+    const norm = event.norm
     if (!norm) return null
 
     const existing = this.trends.get(norm)
@@ -48,16 +47,24 @@ export class BandwagonTracker {
 
   private maybeQualify(
     norm: string,
-    event: DanmakuEvent,
-    globalEvents: readonly DanmakuEvent[],
+    event: NormalizedEvent,
+    globalEvents: readonly NormalizedEvent[],
   ): void {
     const cutoff = event.ts - this.getCfg().trendWindowMs
-    const recent = globalEvents.filter((e) => e.ts >= cutoff && normalizeText(e.text) === norm)
+    // norm 走事件缓存，火爆房间不再对全局窗口逐条重新归一化（spec 011）/ Cached norms: no re-normalizing the whole global window per message.
+    const recent = globalEvents.filter((e) => e.ts >= cutoff && e.norm === norm)
     const uids = new Set(recent.map((e) => e.uid))
     if (uids.size < this.getCfg().trendMinUids || recent.length < this.getCfg().trendMinCount)
       return
     this.trends.set(norm, { qualifiedAt: event.ts, earlyUids: uids })
     for (const uid of uids) this.userStats(uid).earlyCount++
+  }
+
+  /** 删除过期趋势（sweep/GC 用）：过期趋势本就不会再接跟风，留着只占内存 / Drop expired trends (sweep/GC): they can't accept joins anymore. */
+  prune(now: number): void {
+    for (const [norm, trend] of this.trends) {
+      if (now - trend.qualifiedAt > this.getCfg().joinWindowMs) this.trends.delete(norm)
+    }
   }
 
   private evaluate(uid: number): RuleHit | null {

@@ -1,5 +1,4 @@
-import type { DanmakuEvent } from '../../types'
-import { normalizeText } from '../normalize'
+import type { NormalizedEvent } from '../../types'
 import type { D1Config, RuleHit } from '../verdict'
 
 /** 是否 D1 豁免文本（对归一化后文本判定；名单在 defaultDetectConfig.d1）/ Whether a normalized text is exempt from D1 (list lives in defaultDetectConfig.d1). */
@@ -34,19 +33,26 @@ function findCycleLen(texts: readonly string[], cfg: D1Config): number | null {
   return null
 }
 
-/** D1 独轮车：复读 / 固定节拍 / 轮播三信号累计，≥2 项升高置信 / D1 repeat-loop: repeat + cadence + carousel; ≥2 signals upgrade to high. */
-export function checkRepeatLoop(events: readonly DanmakuEvent[], cfg: D1Config): RuleHit | null {
+/**
+ * D1 独轮车 / D0 手动复读嫌疑：复读 / 固定节拍 / 轮播三信号累计（spec 011）。
+ * 唯一信号是「复读」时判 D0（疑似手动，淡色提醒）；含节拍或轮播判 D1，≥2 信号升高置信。
+ * D1 repeat-loop vs D0 manual-repeat suspicion: repeat + cadence + carousel signals.
+ * Repeat as the ONLY signal yields D0 (likely manual, faint hint); any cadence/carousel
+ * involvement yields D1, with ≥2 signals upgrading to high.
+ */
+export function checkRepeatLoop(events: readonly NormalizedEvent[], cfg: D1Config): RuleHit | null {
   const evidence: string[] = []
   // 豁免文本整条剔除后再算信号：它们既不构成复读/轮播，也不参与节拍间隔。
   // Exempt texts are removed wholesale before signal computation: they count toward
   // neither repeat/carousel nor the cadence intervals.
-  const kept = events.filter((e) => !isD1ExemptText(normalizeText(e.text), cfg))
-  const texts = kept.map((e) => normalizeText(e.text))
+  const kept = events.filter((e) => !isD1ExemptText(e.norm, cfg))
+  const texts = kept.map((e) => e.norm)
 
   // 复读：最新一条的归一化文本在窗口内反复出现 / Repeat: the latest normalized text recurs in the window.
   const latest = texts[texts.length - 1]
   const repeatCount = texts.filter((t) => t === latest).length
-  if (latest && repeatCount >= cfg.repeatMin) {
+  const hasRepeat = !!latest && repeatCount >= cfg.repeatMin
+  if (hasRepeat) {
     evidence.push(`复读：「${latest.slice(0, 20)}」窗口内出现 ${repeatCount} 次`)
   }
 
@@ -72,5 +78,9 @@ export function checkRepeatLoop(events: readonly DanmakuEvent[], cfg: D1Config):
   }
 
   if (evidence.length === 0) return null
+  // 仅复读单信号 → D0（手动复读嫌疑）；有节拍/轮播参与 → D1（自动化特征）/ Repeat-only → D0; cadence/carousel involved → D1.
+  if (evidence.length === 1 && hasRepeat) {
+    return { rule: 'D0', confidence: 'medium', evidence }
+  }
   return { rule: 'D1', confidence: evidence.length >= 2 ? 'high' : 'medium', evidence }
 }

@@ -12,6 +12,8 @@ export interface BadgeSpec {
 }
 
 const RULE_META: Record<RuleId, { label: string; color: string; name: string }> = {
+  // D0 淡灰：疑似手动复读，提醒性质而非违规（spec 011）/ D0 grey: suspected manual repeat, a hint rather than a violation.
+  D0: { label: 'D0', color: '#777', name: '手动复读嫌疑' },
   D1: { label: 'D1', color: '#e8890c', name: '独轮车复读' },
   D2: { label: 'D2', color: '#d03030', name: '不可见字符规避' },
   D4: { label: 'D4', color: '#7c4dff', name: '自动融入跟风' },

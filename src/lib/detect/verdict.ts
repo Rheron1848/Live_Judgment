@@ -1,5 +1,5 @@
-/** 检测规则编号 / Detection rule ids. */
-export type RuleId = 'D1' | 'D2' | 'D4' | 'D8'
+/** 检测规则编号；D0 = 疑似手动复读（仅复读单信号，淡色提醒，spec 011）/ Detection rule ids; D0 = suspected manual repeat (faint hint). */
+export type RuleId = 'D0' | 'D1' | 'D2' | 'D4' | 'D8'
 
 /** 置信度：中为单信号，高为多信号或强信号 / Confidence: medium = single signal, high = multiple or strong signals. */
 export type Confidence = 'medium' | 'high'
@@ -60,6 +60,8 @@ export interface DetectConfig {
   userWindowMs: number
   userWindowMax: number
   globalWindowMs: number
+  /** 判定衰减：命中超过此时长未复现即退出（摘徽章，档案保留，spec 011）/ Verdict decay: a hit not re-firing within this span exits (badge off, records kept). */
+  verdictDecayMs: number
   d1: D1Config
   d4: D4Config
   d8: D8Config
@@ -86,6 +88,9 @@ export const defaultDetectConfig: DetectConfig = {
   userWindowMs: 60 * 1000,
   userWindowMax: 100,
   globalWindowMs: 60 * 1000,
+  // 判定衰减 5 分钟（2026-08-25 用户拍板做退出机制）：手动复读党停手后徽章自动摘除
+  // Verdict decay 5min (user decision): badges auto-exit once the behavior stops.
+  verdictDecayMs: 5 * 60 * 1000,
   d1: {
     repeatMin: 3,
     intervalMinMs: 900,
@@ -94,8 +99,9 @@ export const defaultDetectConfig: DetectConfig = {
     cycleMinLen: 2,
     cycleMaxLen: 6,
     cycleMinRounds: 2,
-    // 豁免名单保持短小、只收无争议项；规避免费应援文化被误判 / Keep the exempt list short and uncontroversial.
-    exemptTexts: ['打call', '666', '233', '2333', 'hhh', 'awsl', '好耶'],
+    // 豁免名单保持短小、只收无争议项；规避免费应援文化被误判（2026-08-25 用户拍板：666/233 系误伤面大，移出默认）
+    // Keep the exempt list short and uncontroversial; 666/233 family removed from defaults (user decision).
+    exemptTexts: ['打call', 'hhh', 'awsl', '好耶'],
     exemptPatterns: [
       /^[\p{P}\p{S}]+$/u, // 纯标点/符号：?、！！！等 / pure punctuation: ?, !!!, etc.
       /^\[[^\s[\]]{1,8}\]$/, // 单方括号表情：[打call]、[doge] / single bracket emote

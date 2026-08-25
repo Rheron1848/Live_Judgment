@@ -33,4 +33,16 @@ describe('badgesForVerdict', () => {
     expect(d1.title).toContain('复读：「x」窗口内出现 5 次')
     expect(d1.title.split('\n')).toHaveLength(3)
   })
+
+  test('D0 手动复读嫌疑：淡色非实心徽章', () => {
+    const [d0] = badgesForVerdict({
+      uid: 7,
+      uname: 'manual',
+      updatedAt: 0,
+      hits: [{ rule: 'D0', confidence: 'medium', evidence: ['复读：「前排」窗口内出现 3 次'] }],
+    })
+    expect(d0.label).toBe('D0')
+    expect(d0.solid).toBe(false)
+    expect(d0.title).toContain('手动复读')
+  })
 })

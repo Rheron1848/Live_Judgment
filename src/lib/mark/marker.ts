@@ -39,7 +39,7 @@ export function ensureStyle(doc: Document = document): void {
   doc.head.appendChild(style)
 }
 
-// 徽章容器分自动/人工两个槽位，互不覆盖（判定升级刷自动槽，名单标记刷人工槽）。
+// 徽章容器分自动/名单两个槽位，互不覆盖（判定升级刷自动槽，标记名单刷名单槽）。
 // The badge container has separate auto/manual slots so updates never clobber each other.
 function slotOf(el: HTMLElement, slot: 'auto' | 'manual'): HTMLElement {
   const doc = el.ownerDocument
@@ -76,7 +76,7 @@ export function markElement(el: HTMLElement, verdict: UserVerdict): void {
   )
 }
 
-/** 在弹幕节点插入/更新人工名单徽章 / Insert or update the manual-watchlist badge on a chat item. */
+/** 在弹幕节点插入/更新标记名单徽章 / Insert or update the watchlist badge on a chat item. */
 export function markManual(el: HTMLElement, entry: WatchlistEntry): void {
   const doc = el.ownerDocument
   ensureStyle(doc)
@@ -85,17 +85,27 @@ export function markManual(el: HTMLElement, entry: WatchlistEntry): void {
   const badge = doc.createElement('span')
   badge.className = 'lj-badge'
   badge.style.backgroundColor = '#1e88e5'
-  badge.textContent = '人工'
+  badge.textContent = '标记'
   const added = new Date(entry.addedAt).toLocaleString()
-  badge.title = `人工标记\n加入于 ${added}${entry.note ? `\n备注：${entry.note}` : ''}`
+  badge.title = `标记名单（持久标记，入场即标）\n加入于 ${added}${entry.note ? `\n备注：${entry.note}` : ''}`
   badge.dataset.ljUid = String(entry.uid)
   slot.replaceChildren(badge)
 }
 
-/** 清掉某用户在屏弹幕的人工徽章（移出名单时调用）/ Remove manual badges from a user's on-screen messages (when unwatching). */
+/** 清掉某用户在屏弹幕的标记徽章（移出名单时调用）/ Remove watchlist badges from a user's on-screen messages (when unwatching). */
 export function unmarkManual(uid: number, root: ParentNode = document): void {
   for (const el of root.querySelectorAll<HTMLElement>(`${ITEM_SELECTOR}[data-uid="${uid}"]`)) {
     el.querySelector('[data-lj-slot="manual"]')?.replaceChildren()
+  }
+}
+
+/** 清掉某用户在屏弹幕的检测徽章（判定衰减退出时调用，spec 011）/ Remove detection badges from a user's on-screen messages (on verdict decay exit). */
+export function unmarkAuto(uid: number, root: ParentNode = document): void {
+  for (const el of root.querySelectorAll<HTMLElement>(`${ITEM_SELECTOR}[data-uid="${uid}"]`)) {
+    el.querySelector('[data-lj-slot="auto"]')?.replaceChildren()
+    // 两个槽位都空时摘除整条高亮，避免留下无徽章的底色 / Drop whole-item tint when both slots are empty.
+    const container = el.querySelector(':scope > .lj-badges')
+    if (container && !container.textContent) el.classList.remove(HIGHLIGHT_MARK_CLASS)
   }
 }
 
@@ -106,7 +116,7 @@ export function markExisting(uid: number, verdict: UserVerdict, root: ParentNode
   }
 }
 
-/** 补标名单用户在屏的旧弹幕（人工徽章）/ Retro-mark a watchlisted user's on-screen messages. */
+/** 补标名单用户在屏的旧弹幕（标记徽章）/ Retro-mark a watchlisted user's on-screen messages. */
 export function markManualExisting(entry: WatchlistEntry, root: ParentNode = document): void {
   for (const el of root.querySelectorAll<HTMLElement>(
     `${ITEM_SELECTOR}[data-uid="${entry.uid}"]`,

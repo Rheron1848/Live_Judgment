@@ -1,5 +1,4 @@
-import type { DanmakuEvent } from '../../types'
-import { normalizeText } from '../normalize'
+import type { NormalizedEvent } from '../../types'
 import type { D8Config, RuleHit } from '../verdict'
 
 function bigrams(text: string): Set<string> {
@@ -24,41 +23,48 @@ function similarity(a: Set<string>, b: Set<string>): number {
   return inter / (a.size + b.size - inter)
 }
 
+/** 批次级全局长度统计（引擎每批算一次，避免逐事件对全局窗口全量排序，spec 011）/ Batch-level global length stats (computed once per batch by the engine). */
+export interface GlobalStats {
+  /** 房间长度中位数（样本不足 20 时为 0，退回绝对阈值）/ Room median length (0 when samples are scarce). */
+  median: number
+}
+
+/** 从全局窗口计算批次级统计 / Compute batch-level stats from the global window. */
+export function computeGlobalStats(globalEvents: readonly NormalizedEvent[]): GlobalStats {
+  const lengths = globalEvents.map((e) => e.norm.length).filter((n) => n > 0)
+  lengths.sort((a, b) => a - b)
+  return { median: lengths.length >= 20 ? lengths[Math.floor(lengths.length / 2)] : 0 }
+}
+
 /** D8 长文无关刷屏：同一用户窗口内 ≥consecutiveMin 条「显著偏长且与上下文零重合」的弹幕 / D8: ≥consecutiveMin long, context-unrelated messages from one user. */
 export function checkLongOfftopic(
-  userEvents: readonly DanmakuEvent[],
-  globalEvents: readonly DanmakuEvent[],
+  userEvents: readonly NormalizedEvent[],
+  globalEvents: readonly NormalizedEvent[],
   cfg: D8Config,
+  stats: GlobalStats,
 ): RuleHit | null {
   const uid = userEvents[userEvents.length - 1]?.uid
   if (uid === undefined) return null
 
-  // 房间长度中位数（样本不足时退回绝对阈值）/ Room median message length (absolute threshold when samples are scarce).
-  const lengths = globalEvents
-    .map((e) => normalizeText(e.text).length)
-    .filter((n) => n > 0)
-    .sort((a, b) => a - b)
-  const median = lengths.length >= 20 ? lengths[Math.floor(lengths.length / 2)] : 0
-  const minLen = Math.max(cfg.minLen, median * cfg.lengthRatio)
+  const minLen = Math.max(cfg.minLen, stats.median * cfg.lengthRatio)
 
   // 上下文：该用户之外最近 contextSize 条 / Context: the latest contextSize messages from other users.
   const contextGrams = bigrams(
     globalEvents
       .filter((e) => e.uid !== uid)
       .slice(-cfg.contextSize)
-      .map((e) => normalizeText(e.text))
+      .map((e) => e.norm)
       .join(' '),
   )
 
   const longOfftopic = userEvents.filter((e) => {
-    const norm = normalizeText(e.text)
-    if (norm.length < minLen) return false
-    return containment(bigrams(norm), contextGrams) < cfg.overlapMax
+    if (e.norm.length < minLen) return false
+    return containment(bigrams(e.norm), contextGrams) < cfg.overlapMax
   })
   if (longOfftopic.length < cfg.consecutiveMin) return null
 
   // 长文彼此高度相似（又是复读）时升高置信，与 D1 互为佐证 / Upgrade when the long texts are near-identical too (corroborates D1).
-  const norms = longOfftopic.map((e) => normalizeText(e.text))
+  const norms = longOfftopic.map((e) => e.norm)
   const first = bigrams(norms[0])
   const allSimilar = norms.every((n) => similarity(bigrams(n), first) > 0.5)
   const avgLen = Math.round(norms.reduce((s, n) => s + n.length, 0) / norms.length)

@@ -59,15 +59,18 @@ describe('D1 独轮车复读', () => {
     expect(d1?.evidence.join()).toContain('节拍')
   })
 
-  test('第 3 条同文本到达时先给中置信', () => {
+  test('第 3 条同文本到达：仅复读单信号 → 淡色 D0 而非 D1', () => {
     const engine = createDetectionEngine()
     // 间隔拉开，避免节拍证据；用户窗口 1 分钟，间隔须小于窗口 / Spread intervals so the cadence signal doesn't fire; must stay within the 1-minute user window.
     for (let i = 0; i < 3; i++) {
       engine.ingest(ev(1, '前排', T0 + i * 20_000))
     }
-    const d1 = verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')
-    expect(d1?.confidence).toBe('medium')
-    expect(d1?.evidence.join()).toContain('复读')
+    const v = verdictOf(engine, 1)
+    // 手动复读的典型形态：只挂淡色 D0 嫌疑，不产 D1 / Typical manual repeat: faint D0 suspicion only, no D1.
+    const d0 = v?.hits.find((h) => h.rule === 'D0')
+    expect(d0?.confidence).toBe('medium')
+    expect(d0?.evidence.join()).toContain('复读')
+    expect(v?.hits.find((h) => h.rule === 'D1')).toBeUndefined()
   })
 
   test('轮播序列 A B C A B C → 轮播证据', () => {
@@ -117,15 +120,15 @@ describe('D1 独轮车复读', () => {
     expect(verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')).toBeUndefined()
   })
 
-  test('豁免文本之间夹带复读广告 → 剩余部分照常判 D1', () => {
+  test('豁免文本之间夹带复读广告 → 仅复读信号，判 D0', () => {
     const engine = createDetectionEngine()
     const seq = ['?', '加群123456', '？', '加群123456', '[doge]', '加群123456']
     for (const [i, text] of seq.entries()) {
       engine.ingest(ev(1, text, T0 + i * 2020))
     }
-    const d1 = verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')
-    expect(d1).toBeDefined()
-    expect(d1?.evidence.join()).toContain('复读')
+    const d0 = verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D0')
+    expect(d0).toBeDefined()
+    expect(d0?.evidence.join()).toContain('复读')
   })
 })
 
@@ -254,5 +257,65 @@ describe('D8 长文无关刷屏', () => {
       engine.ingest(ev(1, ch.repeat(50), T0 + 30_000 + i * 5000))
     }
     expect(verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D8')).toBeUndefined()
+  })
+})
+
+describe('判定退出（sweep 衰减）', () => {
+  // 与 defaultDetectConfig.verdictDecayMs 保持一致（5 分钟）/ Mirrors defaultDetectConfig.verdictDecayMs.
+  const DECAY = 5 * 60_000
+
+  test('停止违规超过衰减期 → sweep 后判定退出并以空 hits 通知', () => {
+    const engine = createDetectionEngine()
+    const seen: UserVerdict[] = []
+    engine.onVerdict((v) => seen.push(v))
+    for (let i = 0; i < 5; i++) engine.ingest(ev(1, '主播加油', T0 + i * 1010))
+    const lastHit = T0 + 4 * 1010
+    expect(verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')).toBeDefined()
+
+    engine.sweep(lastHit + DECAY + 1)
+    expect(verdictOf(engine, 1)).toBeUndefined()
+    // 退出通知：空 hits 的 verdict（uid 可用于摘徽章）/ Exit notification: a verdict with empty hits.
+    expect(seen.at(-1)?.uid).toBe(1)
+    expect(seen.at(-1)?.hits).toEqual([])
+  })
+
+  test('衰减期内仍有命中 → 判定保留', () => {
+    const engine = createDetectionEngine()
+    for (let i = 0; i < 5; i++) engine.ingest(ev(1, '主播加油', T0 + i * 1010))
+    engine.sweep(T0 + 4 * 1010 + DECAY - 1000)
+    expect(verdictOf(engine, 1)?.hits.find((h) => h.rule === 'D1')).toBeDefined()
+  })
+
+  test('部分命中过期 → 降级并通知重绘', () => {
+    const engine = createDetectionEngine()
+    const seen: UserVerdict[] = []
+    engine.onVerdict((v) => seen.push(v))
+    // 先打出 D1（复读+节拍），再在用户窗口之外打一条 D2（避免顺带刷新 D1 的 lastSeen）
+    // First D1 (repeat+cadence), then a D2 hit outside the user window (so it doesn't refresh D1's lastSeen).
+    for (let i = 0; i < 5; i++) engine.ingest(ev(1, '主播加油', T0 + i * 1010))
+    engine.ingest(ev(1, '夹­带', T0 + 100_000))
+    expect(verdictOf(engine, 1)?.hits).toHaveLength(2)
+    // 只让 D1 过期（D2 最后命中时刻更晚）/ Expire D1 only (D2's last hit is later).
+    engine.sweep(T0 + 4 * 1010 + DECAY + 1)
+    const v = verdictOf(engine, 1)
+    expect(v?.hits.map((h) => h.rule)).toEqual(['D2'])
+    expect(seen.at(-1)?.hits.map((h) => h.rule)).toEqual(['D2'])
+  })
+})
+
+describe('批处理 ingestBatch', () => {
+  test('与逐条 ingest 判定结果一致', () => {
+    const seq = Array.from({ length: 5 }, (_, i) => ev(1, '主播加油', T0 + i * 1010))
+    const a = createDetectionEngine()
+    for (const e of seq) a.ingest(e)
+    const b = createDetectionEngine()
+    b.ingestBatch(seq)
+    expect(verdictOf(b, 1)).toEqual(verdictOf(a, 1))
+  })
+
+  test('空批次安全', () => {
+    const engine = createDetectionEngine()
+    engine.ingestBatch([])
+    expect(verdictOf(engine, 1)).toBeUndefined()
   })
 })

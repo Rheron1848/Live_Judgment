@@ -14,11 +14,13 @@ import {
   markManual,
   markManualExisting,
   setMarkHighlight,
+  unmarkAuto,
   unmarkManual,
 } from './lib/mark/marker'
 import { createPanel } from './lib/panel/panel'
 import { parseRoomId } from './lib/room'
 import { mergeConfig, type SettingsOverride } from './lib/settings/config'
+import type { DanmakuEvent } from './lib/types'
 import { resolveAnchorName } from './lib/store/anchor'
 import {
   addBlockWord,
@@ -128,6 +130,11 @@ async function main(roomId: number): Promise<void> {
   engine.onVerdict((verdict) => {
     // 调试用日志，设置面板落地后改为可选 / Debug log; make optional once the settings panel lands.
     console.log('[LiveJudgment] verdict', JSON.stringify(verdict))
+    // 判定衰减退出：空 hits = 摘除该用户全部检测徽章（spec 011）/ Decay exit: empty hits = strip all detection badges.
+    if (verdict.hits.length === 0) {
+      unmarkAuto(verdict.uid)
+      return
+    }
     markExisting(verdict.uid, verdict)
     if (!db) return
     for (const hit of verdict.hits) {
@@ -257,8 +264,11 @@ async function main(roomId: number): Promise<void> {
   applySettings()
 
   const source = createDomChatSource(roomId)
+  // 检测批处理队列：事件先进队，每秒 flush 一批进引擎（spec 011，用户拍板「一定时间处理一批」）
+  // Detection batch queue: events queue up and flush into the engine once per second (spec 011).
+  const pending: DanmakuEvent[] = []
   source.start((event) => {
-    engine.ingest(event)
+    pending.push(event)
     buffer?.push({
       uid: event.uid,
       uname: event.uname,
@@ -267,8 +277,8 @@ async function main(roomId: number): Promise<void> {
       ts: event.ts,
     })
     if (!event.el) return
-    // 命中屏蔽名单始终隐藏；命中屏蔽词按设置隐藏或高亮；引擎 ingest 与落库照常（屏蔽 ≠ 放过违规）。
-    // User-mute hits always hide; block-word hits hide or highlight per settings; engine ingest and persistence still ran above (hiding ≠ excusing).
+    // 命中屏蔽名单始终隐藏；命中屏蔽词按设置隐藏或高亮；检测与落库照常（屏蔽 ≠ 放过违规）。
+    // User-mute hits always hide; block-word hits hide or highlight per settings; detection and persistence still run (hiding ≠ excusing).
     if (isUidMuted(event.uid)) {
       hideElement(event.el)
     } else if (blockWordMatcher.test(event.text)) {
@@ -277,9 +287,22 @@ async function main(roomId: number): Promise<void> {
     }
     const entry = watchlist.get(event.uid)
     if (entry) markManual(event.el, entry)
-    const verdict = engine.getVerdict(event.uid)
-    if (verdict) markElement(event.el, verdict)
   })
+
+  // 批处理 flush：每秒一批；徽章在判定就绪后对批次内弹幕统一补挂 / Batch flush every second; badges are applied to the batch once verdicts are ready.
+  setInterval(() => {
+    if (pending.length === 0) return
+    const batch = pending.splice(0)
+    engine.ingestBatch(batch)
+    for (const e of batch) {
+      if (!e.el) continue
+      const verdict = engine.getVerdict(e.uid)
+      if (verdict && verdict.hits.length > 0) markElement(e.el, verdict)
+    }
+  }, 1000)
+
+  // 判定衰减扫描：每分钟摘除过期命中（退出机制）并 GC 空窗口 / Decay sweep every minute: expire stale hits (exit mechanism) and GC.
+  setInterval(() => engine.sweep(Date.now()), 60_000)
 }
 
 const roomId = parseRoomId(location.pathname)

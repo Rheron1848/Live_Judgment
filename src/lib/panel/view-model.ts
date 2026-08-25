@@ -30,6 +30,7 @@ export interface UserViewModel {
 }
 
 const RULE_NAMES: Record<RuleId, string> = {
+  D0: '手动复读嫌疑',
   D1: '独轮车复读',
   D2: '不可见字符规避',
   D4: '自动融入跟风',
