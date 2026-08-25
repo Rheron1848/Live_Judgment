@@ -1,3 +1,5 @@
+import type { ActionResult } from '../action/http'
+import { NO_PERMISSION_CODE } from '../action/silence'
 import { resolveAnchorName } from '../store/anchor'
 import type { BlockWordEntry } from '../store/blockwords'
 import { danmakuByUid } from '../store/danmaku'
@@ -20,6 +22,17 @@ export interface PanelContext {
   listUserMutes(): UserMuteEntry[]
   addUserMute(entry: UserMuteEntry): Promise<void>
   removeUserMute(id: number): Promise<void>
+  /** 官方屏蔽本地乐观记录（仅用于提示小字，不驱动按钮状态；接口幂等，重复操作无害）。
+   *  Local optimistic record of official shield (drives only a hint line, never button state; the API is idempotent). */
+  getOfficialShieldInfo(uid: number): { shielded: boolean; updatedAt: number } | undefined
+  setOfficialShield(uid: number, shield: boolean): Promise<ActionResult>
+  /** 拉黑状态查询；undefined 表示查询失败 / Block-state query; undefined means the query failed. */
+  getBlocked(uid: number): Promise<boolean | undefined>
+  setBlocked(uid: number, block: boolean): Promise<ActionResult>
+  silenceUser(uid: number): Promise<ActionResult>
+  /** 该用户是否有在屏弹幕（举报入口只对在屏弹幕可用）/ Whether the user has an on-screen danmaku (report entry requires one). */
+  hasOnScreenDanmaku(uid: number): boolean
+  openOfficialReport(uid: number): Promise<ActionResult>
 }
 
 export interface Panel {
@@ -47,6 +60,7 @@ const CSS = `
 .muted { color: #889; }
 .badge { display: inline-block; padding: 0 4px; border-radius: 3px; color: #fff; font-size: 10px; margin-right: 4px; }
 .actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+.act { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
 button { cursor: pointer; border: 0; border-radius: 4px; padding: 3px 8px; background: #2c3040; color: #e8e8e8; }
 button.danger { background: #7a2020; }
 input { flex: 1; min-width: 80px; background: #12141d; border: 1px solid #333; border-radius: 4px; color: #e8e8e8; padding: 3px 6px; }
@@ -99,6 +113,16 @@ export function createPanel(ctx: PanelContext): Panel {
   let tab: 'user' | 'watchlist' | 'blockwords' = 'user'
   let currentUid = 0
   let currentUname = ''
+  // 处置结果的展示文案（B 站 message 原样透传）；禁言被回 100004 后整会话置灰。
+  // Display text for the last action result (Bilibili's message passed through); silence greys out for the session after a 100004.
+  let actionMsg = ''
+  let silenceDenied = false
+
+  // 动作结果展示并触发重绘（按钮文案随状态刷新）/ Show an action result and re-render (button labels follow state).
+  function showActionResult(res: ActionResult): void {
+    actionMsg = res.message || (res.ok ? '操作成功' : '操作失败')
+    render()
+  }
 
   function close(): void {
     host?.remove()
@@ -267,13 +291,19 @@ export function createPanel(ctx: PanelContext): Panel {
         'danger',
       ),
     )
-    // 本地屏蔽（隐藏其弹幕）与人工名单（标记观察）是两种处置，并列给出。
-    // Local mute (hide messages) and manual watchlist (mark & observe) are different dispositions; offer both.
+    // ---- 处置区：个人处置（本地 + 官方）与房管处置分组，每个动作先 confirm，失败原样展示 B 站 message。
+    // ---- Action area: personal (local + official) vs room-admin groups; confirm first, Bilibili's message verbatim on failure.
+    const personal = el('div', 'section')
+    personal.appendChild(el('h3', '', '个人处置'))
+
+    // 本地屏蔽（隐藏其弹幕）：纯本地、立即生效。
+    // Local mute (hide messages): purely local, effective immediately.
+    const muteRow = el('div', 'act')
     const activeMutes = ctx
       .listUserMutes()
       .filter((m) => m.uid === uid && (m.roomId === 0 || m.roomId === ctx.currentRoomId))
     if (activeMutes.length > 0) {
-      row.appendChild(
+      muteRow.appendChild(
         button('解除本地屏蔽', () => {
           void (async () => {
             for (const m of activeMutes) {
@@ -291,8 +321,8 @@ export function createPanel(ctx: PanelContext): Panel {
       optGlobal.value = 'global'
       optGlobal.textContent = '全局'
       scope.append(optRoom, optGlobal)
-      row.appendChild(scope)
-      row.appendChild(
+      muteRow.appendChild(scope)
+      muteRow.appendChild(
         button('本地屏蔽此人', () => {
           void ctx
             .addUserMute({
@@ -305,7 +335,115 @@ export function createPanel(ctx: PanelContext): Panel {
         }),
       )
     }
-    return row
+    muteRow.appendChild(el('span', 'muted', '立即隐藏，仅自己可见'))
+    personal.appendChild(muteRow)
+
+    // 官方屏蔽：双动作幂等模式——两个按钮始终可用（重复操作无害），本地记录只作提示小字。
+    // Official shield: idempotent dual-action mode — both buttons always enabled; the local record is only a hint line.
+    const shieldRow = el('div', 'act')
+    shieldRow.appendChild(
+      button('官方屏蔽', () => {
+        const ok = confirm(
+          `确认官方屏蔽 ${uname}（uid: ${uid}）？\n效果：服务端生效，下次进房起；当前页面不保证立即消失；可随时解除。`,
+        )
+        if (!ok) return
+        void ctx.setOfficialShield(uid, true).then(showActionResult)
+      }),
+    )
+    shieldRow.appendChild(
+      button('解除官方屏蔽', () => {
+        if (!confirm(`确认解除对 ${uname}（uid: ${uid}）的官方屏蔽？`)) return
+        void ctx.setOfficialShield(uid, false).then(showActionResult)
+      }),
+    )
+    shieldRow.appendChild(el('span', 'muted', '服务端生效，下次进房起；本地记录可能与实际有出入'))
+    personal.appendChild(shieldRow)
+    const shieldInfo = ctx.getOfficialShieldInfo(uid)
+    if (shieldInfo) {
+      const when = new Date(shieldInfo.updatedAt).toLocaleString()
+      personal.appendChild(
+        el(
+          'div',
+          'muted',
+          `本地记录：已于 ${when} ${shieldInfo.shielded ? '官方屏蔽' : '解除官方屏蔽'}`,
+        ),
+      )
+    }
+
+    // 拉黑状态依赖只读接口查询，异步刷新按钮文案；查询失败默认可点「拉黑」（act=5 对已拉黑者幂等无害）。
+    // Block state comes from a read-only query and fills in async; on query failure the button defaults to "拉黑" (act=5 is harmless if already blocked).
+    const blockRow = el('div', 'act')
+    let blockedState: boolean | undefined
+    const blockBtn = button('拉黑状态查询中…', () => {
+      const block = blockedState !== true
+      const ok = block
+        ? confirm(
+            `确认将 ${uname}（uid: ${uid}）加入账号黑名单？\n效果：TA 无法关注你、与你私信/评论互动；可随时在此解除。`,
+          )
+        : confirm(`确认将 ${uname}（uid: ${uid}）移出账号黑名单？`)
+      if (!ok) return
+      void ctx.setBlocked(uid, block).then(showActionResult)
+    })
+    blockBtn.disabled = true
+    void ctx.getBlocked(uid).then((b) => {
+      blockedState = b
+      blockBtn.disabled = false
+      blockBtn.textContent = b === true ? '解除拉黑' : '拉黑'
+      if (b === undefined) blockBtn.title = '拉黑状态查询失败，默认提供拉黑'
+    })
+    blockRow.appendChild(blockBtn)
+    blockRow.appendChild(el('span', 'muted', '账号黑名单'))
+    personal.appendChild(blockRow)
+
+    // 举报：只打开官方面板，且只对在屏弹幕可用（历史记录场景置灰）。
+    // Report: only opens the official panel, and only for on-screen danmaku (greyed out for history-only users).
+    const reportRow = el('div', 'act')
+    const onScreen = ctx.hasOnScreenDanmaku(uid)
+    const reportBtn = button('举报选中弹幕', () => {
+      const ok = confirm(
+        `将针对 ${uname}（uid: ${uid}）在屏的一条弹幕打开官方举报面板。\n本脚本只打开面板，理由选择与最终提交由你在官方界面完成。继续？`,
+      )
+      if (!ok) return
+      void ctx.openOfficialReport(uid).then(showActionResult)
+    })
+    reportBtn.disabled = !onScreen
+    reportBtn.title = onScreen
+      ? '打开官方举报面板，理由与提交在官方界面完成'
+      : '仅支持当前在屏的弹幕'
+    reportRow.appendChild(reportBtn)
+    reportRow.appendChild(
+      el('span', 'muted', onScreen ? '打开官方举报面板' : '仅支持当前在屏的弹幕'),
+    )
+    personal.appendChild(reportRow)
+
+    const admin = el('div', 'section')
+    admin.appendChild(el('h3', '', '房管处置'))
+    const arow = el('div', 'act')
+    const silenceBtn = button('禁言', () => {
+      const ok = confirm(
+        `确认请求在该房间永久禁言 ${uname}（uid: ${uid}）？\n需要你是该房间的房管/主播；无权限会返回错误提示。`,
+      )
+      if (!ok) return
+      void ctx.silenceUser(uid).then((res) => {
+        // 无权限回 100004 后整会话置灰，避免反复打扰 / Grey out for the session once 100004 (no permission) is returned.
+        if (res.code === NO_PERMISSION_CODE) silenceDenied = true
+        showActionResult(res)
+      })
+    })
+    if (silenceDenied) {
+      silenceBtn.disabled = true
+      silenceBtn.title = '已确认无房管权限（B 站返回「你不是房管哦」）'
+    }
+    arow.appendChild(silenceBtn)
+    arow.appendChild(el('span', 'muted', '需房管权限'))
+    admin.appendChild(arow)
+
+    const wrap = el('div')
+    wrap.appendChild(row)
+    wrap.appendChild(personal)
+    wrap.appendChild(admin)
+    if (actionMsg) wrap.appendChild(el('div', 'muted', actionMsg))
+    return wrap
   }
 
   function renderWatchlist(body: HTMLElement): void {
@@ -438,6 +576,7 @@ export function createPanel(ctx: PanelContext): Panel {
     openUser(uid, uname) {
       currentUid = uid
       currentUname = uname
+      actionMsg = ''
       tab = 'user'
       render()
     },

@@ -1,5 +1,9 @@
 import { GM_registerMenuCommand } from '$'
 
+import { getBlocked, setBlock } from './lib/action/block'
+import { openOfficialReport as driveOfficialReport } from './lib/action/report'
+import { shieldUser } from './lib/action/shield'
+import { silenceUser as silenceUserApi } from './lib/action/silence'
 import { compileBlockWords } from './lib/blockword/matcher'
 import { createDetectionEngine } from './lib/detect/engine'
 import { createDomChatSource } from './lib/dom-chat-source'
@@ -23,6 +27,11 @@ import {
 import { DanmakuBuffer } from './lib/store/danmaku'
 import { openDatabase, pruneExpiredDanmaku } from './lib/store/db'
 import { addIncident } from './lib/store/incidents'
+import {
+  listOfficialShields,
+  officialShieldKey,
+  setOfficialShield,
+} from './lib/store/officialshields'
 import {
   addUserMute,
   listUserMutes,
@@ -49,6 +58,9 @@ async function main(roomId: number): Promise<void> {
   // blockWords/userMutes degrade to session-scoped in-memory tables when db is unavailable (same as watchlist).
   let blockWords: BlockWordEntry[] = []
   let userMutes: UserMuteEntry[] = []
+  // 官方屏蔽状态：官方读回接口已失效，本地乐观记录（uid:roomId → {shielded, updatedAt}），仅作面板提示。
+  // Official-shield state: the official read-back API is dead, so keep a local optimistic record (panel hint only).
+  const officialShields = new Map<string, { shielded: boolean; updatedAt: number }>()
 
   try {
     db = await openDatabase()
@@ -57,6 +69,9 @@ async function main(roomId: number): Promise<void> {
     watchlist = new Map((await listWatchlist(db)).map((e) => [e.uid, e]))
     blockWords = await listBlockWords(db)
     userMutes = await listUserMutes(db)
+    for (const e of await listOfficialShields(db)) {
+      officialShields.set(e.key, { shielded: e.shielded, updatedAt: e.updatedAt })
+    }
   } catch (err) {
     console.warn('[LiveJudgment] persistence unavailable, degrading to in-memory', err)
   }
@@ -139,6 +154,36 @@ async function main(roomId: number): Promise<void> {
       if (db) await removeUserMute(db, id)
       userMutes = userMutes.filter((e) => e.id !== id)
       reapplyAll()
+    },
+    getOfficialShieldInfo: (uid) => officialShields.get(officialShieldKey(uid, roomId)),
+    async setOfficialShield(uid, shield) {
+      const res = await shieldUser(uid, roomId, shield)
+      if (res.ok) {
+        officialShields.set(officialShieldKey(uid, roomId), {
+          shielded: shield,
+          updatedAt: Date.now(),
+        })
+        if (db) await setOfficialShield(db, uid, roomId, shield)
+        res.message = shield ? '官方屏蔽成功：其弹幕将在你的新会话中被服务端过滤' : '已解除官方屏蔽'
+      }
+      return res
+    },
+    getBlocked: (uid) => getBlocked(uid),
+    async setBlocked(uid, block) {
+      const res = await setBlock(uid, block)
+      if (res.ok) res.message = block ? '已加入账号黑名单' : '已移出账号黑名单'
+      return res
+    },
+    silenceUser: (uid) => silenceUserApi(roomId, uid),
+    hasOnScreenDanmaku: (uid) =>
+      !!document.querySelector(`.chat-item.danmaku-item[data-uid="${uid}"]`),
+    async openOfficialReport(uid) {
+      const items = document.querySelectorAll<HTMLElement>(
+        `.chat-item.danmaku-item[data-uid="${uid}"]`,
+      )
+      const item = items[items.length - 1]
+      if (!item) return { ok: false, message: '该用户当前没有在屏弹幕' }
+      return driveOfficialReport(item)
     },
   })
 
