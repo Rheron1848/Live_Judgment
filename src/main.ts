@@ -128,8 +128,6 @@ async function main(roomId: number): Promise<void> {
   const recorded = new Set<string>()
 
   engine.onVerdict((verdict) => {
-    // 调试用日志，设置面板落地后改为可选 / Debug log; make optional once the settings panel lands.
-    console.log('[LiveJudgment] verdict', JSON.stringify(verdict))
     // 判定衰减退出：空 hits = 摘除该用户全部检测徽章（spec 011）/ Decay exit: empty hits = strip all detection badges.
     if (verdict.hits.length === 0) {
       unmarkAuto(verdict.uid)

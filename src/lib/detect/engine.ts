@@ -78,7 +78,17 @@ export function createDetectionEngine(
     if (events.length === 0) return
     // 归一化在此处只做一次，窗口与全部规则共享缓存（spec 011 性能核心）
     // Normalize exactly once here; windows and all rules share the cached result.
-    const enriched: NormalizedEvent[] = events.map((e) => ({ ...e, norm: normalizeText(e.text) }))
+    // 显式挑字段而不透传 el：窗口最长持有事件 60s，引用已移除的弹幕节点会阻止其 GC
+    // Pick fields explicitly instead of spreading e: windows retain events up to 60s,
+    // and holding `el` would pin detached chat-item nodes in memory.
+    const enriched: NormalizedEvent[] = events.map((e) => ({
+      uid: e.uid,
+      uname: e.uname,
+      text: e.text,
+      ts: e.ts,
+      roomId: e.roomId,
+      norm: normalizeText(e.text),
+    }))
     const hitsByUid = new Map<number, RuleHit[]>()
     const lastEventByUid = new Map<number, NormalizedEvent>()
     const collect = (uid: number, hit: RuleHit | null): void => {

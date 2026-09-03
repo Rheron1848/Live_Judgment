@@ -8,7 +8,10 @@ interface Trend {
 }
 
 interface UserStats {
-  joinLatencies: number[]
+  /** 跟风次数与延迟总和：evaluate 只用计数和均值，聚合存储使每用户内存 O(1)（原为无上限数组）
+   * Join count and latency sum: evaluate only needs count and mean; aggregates keep per-user memory O(1) (was an unbounded array). */
+  joinCount: number
+  joinLatencySum: number
   earlyCount: number
 }
 
@@ -37,7 +40,9 @@ export class BandwagonTracker {
     const trend = this.trends.get(norm)
     if (trend) {
       if (!trend.earlyUids.has(event.uid)) {
-        this.userStats(event.uid).joinLatencies.push(event.ts - trend.qualifiedAt)
+        const s = this.userStats(event.uid)
+        s.joinCount++
+        s.joinLatencySum += event.ts - trend.qualifiedAt
       }
     } else {
       this.maybeQualify(norm, event, globalEvents)
@@ -69,10 +74,10 @@ export class BandwagonTracker {
 
   private evaluate(uid: number): RuleHit | null {
     const s = this.stats.get(uid)
-    if (!s || s.joinLatencies.length < this.getCfg().joinsForMedium || s.earlyCount > 0) return null
-    const avg = s.joinLatencies.reduce((a, b) => a + b, 0) / s.joinLatencies.length
+    if (!s || s.joinCount < this.getCfg().joinsForMedium || s.earlyCount > 0) return null
+    const avg = s.joinLatencySum / s.joinCount
     if (avg > this.getCfg().maxAvgLatencyMs) return null
-    const joins = s.joinLatencies.length
+    const joins = s.joinCount
     return {
       rule: 'D4',
       confidence: joins >= this.getCfg().joinsForHigh ? 'high' : 'medium',
@@ -83,7 +88,7 @@ export class BandwagonTracker {
   private userStats(uid: number): UserStats {
     let s = this.stats.get(uid)
     if (!s) {
-      s = { joinLatencies: [], earlyCount: 0 }
+      s = { joinCount: 0, joinLatencySum: 0, earlyCount: 0 }
       this.stats.set(uid, s)
     }
     return s
