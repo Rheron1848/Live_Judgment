@@ -32,6 +32,7 @@ gh release create vX.Y.Z dist/live-judgment.user.js \
 
   token 只走管道，不落地、不打印。
 - Git Bash 会话在安装 gh 之前启动时 PATH 不含 gh，用全路径 `"/c/Program Files/GitHub CLI/gh.exe"` 调用。
+- Windows 克隆行尾坑（2026-09-03）：`core.autocrlf=true` 时全仓库检出为 CRLF，`biome check` 误报 52 个文件格式错。仓库已加 `.gitattributes`（`* text=auto eol=lf`）；已有本地克隆需 `git config core.autocrlf false` 后强制重检出一次（`git ls-files -z | xargs -0 rm -f && git checkout -- .`，仅在工作区干净时执行）。
 
 ## 自动更新
 
